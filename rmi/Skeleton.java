@@ -76,7 +76,7 @@ public class Skeleton<T> {
         try {
             tcpServer = new TCPServer<T>(c, server);
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "init tcp server error!");
+            LOGGER.log(Level.SEVERE, "init tcp server error!");
         }
     }
 
@@ -123,6 +123,7 @@ public class Skeleton<T> {
      *              <code>null</code> if the skeleton stopped normally.
      */
     protected void stopped(Throwable cause) {
+        // TODO: callback when listening thread EXIT
     }
 
     /**
@@ -188,7 +189,7 @@ public class Skeleton<T> {
      */
     public synchronized void stop() {
         if (null != tcpServer) {
-            tcpServer.shutDown();
+            tcpServer.stopListenning();
         }
     }
 

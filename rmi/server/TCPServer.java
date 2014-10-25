@@ -1,9 +1,10 @@
 package rmi.server;
 
+import rmi.Skeleton;
 import rmi.config.Config;
 import rmi.server.task.Callback;
 import rmi.server.task.CallbackTask;
-import rmi.server.task.MethodInvocation;
+import rmi.server.task.MethodInvocationTask;
 import rmi.server.task.MethodInvocationCallback;
 
 import java.io.IOException;
@@ -12,6 +13,9 @@ import java.io.ObjectOutputStream;
 import java.lang.reflect.Method;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,22 +36,50 @@ public class TCPServer<T> extends RMIServer<T> {
     private ServerSocket serverSocket;
 
     /**
-     * If the server allow to run
+     * 存放Skelton类中的事件回调函数
+     */
+    private Map<ServerState, Method> callbacks;
+
+    /**
+     * If the server allow to listen for incoming connection
      */
     private Semaphore permission = new Semaphore(0);
 
-    public TCPServer(Class<T> clazz, T serviceImpl) throws IOException {
+    public TCPServer(Class<T> clazz, T serviceImpl)
+            throws IOException {
         super(clazz, serviceImpl);
         init(Config.LISTENING_PORT, Config.MAX_CONNECTION);
+        try {
+            addCallback(ServerState.STOPPED, Skeleton.class.getDeclaredMethod("stopped"));
+            addCallback(ServerState.LISTEN_ERROR, Skeleton.class.getDeclaredMethod("listen_error"));
+            addCallback(ServerState.SERVICE_ERROR, Skeleton.class.getDeclaredMethod("service_error"));
+        } catch (NoSuchMethodException e) {
+            LOGGER.log(Level.WARNING, "[TCPServer] add callbacks FAIL!", e);
+        }
+
     }
-    public TCPServer(int port, int maxConnection, Class<T> clazz, T serviceImpl) throws IOException {
+    public TCPServer(Skeleton<T> skeleton, int port, int maxConnection, Class<T> clazz, T serviceImpl) throws IOException {
         super(clazz, serviceImpl);
         init(port, maxConnection);
     }
 
+    private void init(int port, int maxConnection) throws IOException {
+        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
+        serverSocket = new ServerSocket(port, maxConnection);
+        state.set(ServerState.CREATED.getValue());
+    }
+
+    private void addCallback(ServerState state, Method callback) {
+        if (null == callbacks) {
+            callbacks = new HashMap<ServerState, Method>();
+        }
+        callbacks.put(state, callback);
+    }
+
+
     @Override
     public void run() {
-        while (isRunning()) {
+        while (!isShutDown()) {
             try {
                 permission.acquire();
                 LOGGER.log(Level.INFO, "[TCPServer] start listenning");
@@ -73,7 +105,7 @@ public class TCPServer<T> extends RMIServer<T> {
         if (!state.compareAndSet(ServerState.CREATED.getValue(), ServerState.LISTENNING.getValue())) {
             throw new IllegalStateException("Server start fail, not in the created state!");
         }
-        if (isRunning()) {
+        if (isShutDown()) {
             throw new IllegalStateException("Server start fail, has been started!");
         }
 
@@ -83,14 +115,21 @@ public class TCPServer<T> extends RMIServer<T> {
         super.start();
     }
 
-    public void pauseServer() {
-        if (!state.compareAndSet(ServerState.LISTENNING.getValue(), ServerState.PAUSE_LISTENNING.getValue())) {
+    /**
+     * Pauses listening for incoming connection.
+     * Causes listening thread returns from listening(), blocking on permission.acquire().
+     */
+    public void stopListenning() {
+        if (!state.compareAndSet(ServerState.LISTENNING.getValue(), ServerState.STOPPED.getValue())) {
             throw new IllegalStateException("Server has been started!");
         }
     }
 
+    /**
+     * Resumes listening
+     */
     public void resumeServer() {
-       if (!state.compareAndSet(ServerState.PAUSE_LISTENNING.getValue(), ServerState.LISTENNING.getValue())) {
+       if (!state.compareAndSet(ServerState.STOPPED.getValue(), ServerState.LISTENNING.getValue())) {
            throw new IllegalStateException("Server is not paused!");
        }
         permission.release();
@@ -100,7 +139,7 @@ public class TCPServer<T> extends RMIServer<T> {
     /**
      * Shut down the TCP server, shut down all inner thread pool.
      */
-    public void shutDown() {
+    public void shutdown() {
         int currentStatus = state.get();
         if (ServerState.CREATED.getValue() == currentStatus
                 || ServerState.SHUTDOWN.getValue() == currentStatus) {
@@ -111,11 +150,6 @@ public class TCPServer<T> extends RMIServer<T> {
     }
 
 
-    private void init(int port, int maxConnection) throws IOException {
-        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
-        serverSocket = new ServerSocket(port, maxConnection);
-    }
-
     /**
      * Listenning incoming connections.
      * Main logic for the server.
@@ -125,7 +159,7 @@ public class TCPServer<T> extends RMIServer<T> {
         ObjectOutputStream out = null;
         ObjectInputStream in = null;
         try {
-            while (isRunning() && !isPause()) {
+            while (isShutDown() && !isStopped()) {
                 clientSocket = serverSocket.accept();
                 out = new ObjectOutputStream(clientSocket.getOutputStream());
                 in = new ObjectInputStream(clientSocket.getInputStream());
@@ -134,8 +168,11 @@ public class TCPServer<T> extends RMIServer<T> {
                 Method method = (Method) in.readObject();
                 Object[] args = (Object[]) in.readObject();
 
+                LOGGER.info(String.format("Got a RMI connection:\nmethod=>%s\nargs=>%s", method.getName(),
+                        Arrays.toString(args)));
+
                 // submit a task to workerThreads
-                Callable<Object> methodInvocation = new MethodInvocation(this.serviceImpl, method, args);
+                Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
                 Callback callback = new MethodInvocationCallback(out);
                 CallbackTask task = new CallbackTask(methodInvocation, callback);
 
@@ -167,13 +204,12 @@ public class TCPServer<T> extends RMIServer<T> {
     }
 
 
-    private boolean isRunning() {
-        return (state.get() == ServerState.LISTENNING.getValue() ||
-                state.get() == ServerState.PAUSE_LISTENNING.getValue());
+    private boolean isShutDown() {
+        return state.get() == ServerState.SHUTDOWN.getValue();
     }
 
-    private boolean isPause() {
-        return state.get() == ServerState.PAUSE_LISTENNING.getValue();
+    private boolean isStopped() {
+        return state.get() == ServerState.STOPPED.getValue();
     }
 
 
