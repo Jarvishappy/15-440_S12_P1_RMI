@@ -1,6 +1,4 @@
-package rmi.server.task;
-
-import rmi.RMIException;
+package rmi.server.callback;
 
 import java.io.IOException;
 import java.io.ObjectOutputStream;

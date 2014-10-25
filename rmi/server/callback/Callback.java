@@ -1,4 +1,4 @@
-package rmi.server.task;
+package rmi.server.callback;
 
 public interface Callback {
 
