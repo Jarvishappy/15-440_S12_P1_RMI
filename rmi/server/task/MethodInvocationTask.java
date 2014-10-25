@@ -8,10 +8,18 @@ import java.util.concurrent.Callable;
  */
 public class MethodInvocationTask implements Callable<Object> {
     /**
-     * Service implementaino instance
+     * Service implementation instance
      */
     private Object instance;
+
+    /**
+     * The remote method client want to call
+     */
     private Method method;
+
+    /**
+     * Arguments for the remote method
+     */
     private Object[] args;
 
     public MethodInvocationTask(Object instance, Method method, Object[] args) {
