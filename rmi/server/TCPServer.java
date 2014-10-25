@@ -2,10 +2,11 @@ package rmi.server;
 
 import rmi.Skeleton;
 import rmi.config.Config;
-import rmi.server.task.Callback;
+import rmi.server.callback.Callback;
+import rmi.server.callback.MethodInvocationCallback;
+import rmi.server.event.Subject;
 import rmi.server.task.CallbackTask;
 import rmi.server.task.MethodInvocationTask;
-import rmi.server.task.MethodInvocationCallback;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -26,7 +27,7 @@ import java.util.logging.Logger;
 /**
  * An TCP multithreaded server implementation
  */
-public class TCPServer<T> extends RMIServer<T> {
+public class TCPServer<T> extends RMIServer<T> implements Subject {
     private static final Logger LOGGER = Logger.getLogger("TCPServer");
 
     private ServerState state;   // TCP Server state
@@ -49,17 +50,24 @@ public class TCPServer<T> extends RMIServer<T> {
         super(s, clazz, serviceImpl);
         init(Config.LISTENING_PORT, Config.MAX_CONNECTION);
         try {
-            addCallback(ServerState.STOPPED, Skeleton.class.getDeclaredMethod("stopped"));
-            addCallback(ServerState.LISTEN_ERROR, Skeleton.class.getDeclaredMethod("listen_error"));
-            addCallback(ServerState.SERVICE_ERROR, Skeleton.class.getDeclaredMethod("service_error"));
+            addCallback(ServerState.STOPPED, Skeleton.class.getDeclaredMethod("stopped", Throwable.class));
+            addCallback(ServerState.LISTEN_ERROR, Skeleton.class.getDeclaredMethod("listen_error", Exception.class));
         } catch (NoSuchMethodException e) {
             LOGGER.log(Level.WARNING, "[TCPServer] add callbacks FAIL!", e);
         }
-
     }
+
     public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, int port, int maxConnection) throws IOException {
         super(s, clazz, serviceImpl);
         init(port, maxConnection);
+    }
+
+
+    private void addCallback(ServerState serverState, Method callback) {
+        if (null == callbacks) {
+            callbacks = new HashMap<ServerState, Method>();
+        }
+        callbacks.put(serverState, callback);
     }
 
     private void init(int port, int maxConnection) throws IOException {
@@ -75,6 +83,7 @@ public class TCPServer<T> extends RMIServer<T> {
         }
 
         this.state = after;
+        stateChanged();
     }
 
 
@@ -120,7 +129,6 @@ public class TCPServer<T> extends RMIServer<T> {
      */
     public void stopListenning() {
         stateTransition(ServerState.LISTENNING, ServerState.STOPPED);
-        invokeCallback(this.state);
     }
 
     /**
@@ -167,16 +175,14 @@ public class TCPServer<T> extends RMIServer<T> {
                 // submit a task to workerThreads
                 Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
                 Callback callback = new MethodInvocationCallback(out);
-                CallbackTask task = new CallbackTask(methodInvocation, callback);
+                CallbackTask<T> task = new CallbackTask<T>(this.skeleton, methodInvocation, callback);
 
                 workerThreads.submit(task);
 
             }
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "IO exception occured!", e);
-
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Unknown exception occured!", e);
+            LOGGER.log(Level.WARNING, "Exception occured while listenning!", e);
+            stateTransition(ServerState.LISTENNING, ServerState.LISTEN_ERROR);
         } finally {
             try {
                 if (null != clientSocket) {
@@ -196,19 +202,20 @@ public class TCPServer<T> extends RMIServer<T> {
 
     }
 
-    private void addCallback(ServerState serverState, Method callback) {
-        if (null == callbacks) {
-            callbacks = new HashMap<ServerState, Method>();
-        }
-        callbacks.put(serverState, callback);
+    @Override
+    public void stateChanged(Object... arg) {
+        invokeCallback(arg);
     }
 
-    private void invokeCallback(ServerState serverState) {
-        Method callback = callbacks.get(serverState);
+    /**
+     * Only called by stateTransition()
+     */
+    private void invokeCallback(Object... args) {
+        Method callback = callbacks.get(this.state);
         if (null != callback) {
             callback.setAccessible(true);
             try {
-                callback.invoke(this.skeleton);
+                callback.invoke(this.skeleton, args);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Exception occrued while calling callback", e);
             }
@@ -223,6 +230,5 @@ public class TCPServer<T> extends RMIServer<T> {
     private boolean isStopped() {
         return this.state == ServerState.STOPPED;
     }
-
 
 }
