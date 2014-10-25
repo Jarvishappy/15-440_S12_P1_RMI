@@ -6,7 +6,7 @@ import java.util.concurrent.Callable;
 /**
  * Represents a RMI task
  */
-public class MethodInvocation implements Callable<Object> {
+public class MethodInvocationTask implements Callable<Object> {
     /**
      * Service implementaino instance
      */
@@ -14,7 +14,7 @@ public class MethodInvocation implements Callable<Object> {
     private Method method;
     private Object[] args;
 
-    public MethodInvocation(Object instance, Method method, Object[] args) {
+    public MethodInvocationTask(Object instance, Method method, Object[] args) {
         this.instance = instance;
         this.method = method;
         this.args = args;
