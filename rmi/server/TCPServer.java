@@ -20,7 +20,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,7 +29,7 @@ import java.util.logging.Logger;
 public class TCPServer<T> extends RMIServer<T> {
     private static final Logger LOGGER = Logger.getLogger("TCPServer");
 
-    private AtomicInteger state;   // TCP Server state
+    private ServerState state;   // TCP Server state
 
     private ExecutorService workerThreads;
     private ServerSocket serverSocket;
@@ -45,9 +44,9 @@ public class TCPServer<T> extends RMIServer<T> {
      */
     private Semaphore permission = new Semaphore(0);
 
-    public TCPServer(Class<T> clazz, T serviceImpl)
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl)
             throws IOException {
-        super(clazz, serviceImpl);
+        super(s, clazz, serviceImpl);
         init(Config.LISTENING_PORT, Config.MAX_CONNECTION);
         try {
             addCallback(ServerState.STOPPED, Skeleton.class.getDeclaredMethod("stopped"));
@@ -58,22 +57,24 @@ public class TCPServer<T> extends RMIServer<T> {
         }
 
     }
-    public TCPServer(Skeleton<T> skeleton, int port, int maxConnection, Class<T> clazz, T serviceImpl) throws IOException {
-        super(clazz, serviceImpl);
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, int port, int maxConnection) throws IOException {
+        super(s, clazz, serviceImpl);
         init(port, maxConnection);
     }
 
     private void init(int port, int maxConnection) throws IOException {
         workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
         serverSocket = new ServerSocket(port, maxConnection);
-        state.set(ServerState.CREATED.getValue());
+        state = ServerState.CREATED;
     }
 
-    private void addCallback(ServerState state, Method callback) {
-        if (null == callbacks) {
-            callbacks = new HashMap<ServerState, Method>();
+    private void stateTransition(ServerState before, ServerState after) {
+        if (this.state != before) {
+            throw new IllegalStateException(String.format(
+                    "Server state transition to [%s] fail, not in the [%s] state!", after.name(), before.name()));
         }
-        callbacks.put(state, callback);
+
+        this.state = after;
     }
 
 
@@ -102,9 +103,7 @@ public class TCPServer<T> extends RMIServer<T> {
      * Start the TCP server
      */
     public void startServer() {
-        if (!state.compareAndSet(ServerState.CREATED.getValue(), ServerState.LISTENNING.getValue())) {
-            throw new IllegalStateException("Server start fail, not in the created state!");
-        }
+        stateTransition(ServerState.CREATED, ServerState.LISTENNING);
         if (isShutDown()) {
             throw new IllegalStateException("Server start fail, has been started!");
         }
@@ -120,18 +119,15 @@ public class TCPServer<T> extends RMIServer<T> {
      * Causes listening thread returns from listening(), blocking on permission.acquire().
      */
     public void stopListenning() {
-        if (!state.compareAndSet(ServerState.LISTENNING.getValue(), ServerState.STOPPED.getValue())) {
-            throw new IllegalStateException("Server has been started!");
-        }
+        stateTransition(ServerState.LISTENNING, ServerState.STOPPED);
+        invokeCallback(this.state);
     }
 
     /**
      * Resumes listening
      */
     public void resumeServer() {
-       if (!state.compareAndSet(ServerState.STOPPED.getValue(), ServerState.LISTENNING.getValue())) {
-           throw new IllegalStateException("Server is not paused!");
-       }
+        stateTransition(ServerState.STOPPED, ServerState.LISTENNING);
         permission.release();
     }
 
@@ -140,13 +136,10 @@ public class TCPServer<T> extends RMIServer<T> {
      * Shut down the TCP server, shut down all inner thread pool.
      */
     public void shutdown() {
-        int currentStatus = state.get();
-        if (ServerState.CREATED.getValue() == currentStatus
-                || ServerState.SHUTDOWN.getValue() == currentStatus) {
+        if (this.state == ServerState.CREATED || this.state == ServerState.SHUTDOWN) {
             throw new IllegalStateException("Server isn't running!");
         }
-
-        state.set(ServerState.SHUTDOWN.getValue());
+        this.state = ServerState.SHUTDOWN;
     }
 
 
@@ -203,13 +196,32 @@ public class TCPServer<T> extends RMIServer<T> {
 
     }
 
+    private void addCallback(ServerState serverState, Method callback) {
+        if (null == callbacks) {
+            callbacks = new HashMap<ServerState, Method>();
+        }
+        callbacks.put(serverState, callback);
+    }
+
+    private void invokeCallback(ServerState serverState) {
+        Method callback = callbacks.get(serverState);
+        if (null != callback) {
+            callback.setAccessible(true);
+            try {
+                callback.invoke(this.skeleton);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Exception occrued while calling callback", e);
+            }
+        }
+
+    }
 
     private boolean isShutDown() {
-        return state.get() == ServerState.SHUTDOWN.getValue();
+        return this.state == ServerState.SHUTDOWN;
     }
 
     private boolean isStopped() {
-        return state.get() == ServerState.STOPPED.getValue();
+        return this.state == ServerState.STOPPED;
     }
 
 

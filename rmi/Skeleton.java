@@ -74,7 +74,7 @@ public class Skeleton<T> {
         }
 
         try {
-            tcpServer = new TCPServer<T>(c, server);
+            tcpServer = new TCPServer<T>(this, c, server);
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "init tcp server error!");
         }
