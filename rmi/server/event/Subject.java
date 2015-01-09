@@ -1,8 +1,8 @@
 package rmi.server.event;
 
 /**
- * 观察者模式中的Subject，Observer想要关注的对象都实现这个接口
- * 比如Skeleton感兴趣的server thread和worker thread
+ * 观察者模式中的Subject，Observer想要关注(订阅)的对象都实现这个接口
+ * 比如Skeleton感兴趣的server, thread和worker thread感兴趣的Runnable或Callable
  */
 public interface Subject {
     /**

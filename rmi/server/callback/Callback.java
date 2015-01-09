@@ -1,5 +1,8 @@
 package rmi.server.callback;
 
+/**
+ * Callback for Callable
+ */
 public interface Callback {
 
     /**

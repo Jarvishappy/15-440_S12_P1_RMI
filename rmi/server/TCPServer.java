@@ -62,7 +62,12 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
         init(port, maxConnection);
     }
 
-
+    /**
+     * Add callback to specified server state
+     *
+     * @param serverState the server state
+     * @param callback    corresponding callback for the state
+     */
     private void addCallback(ServerState serverState, Method callback) {
         if (null == callbacks) {
             callbacks = new HashMap<ServerState, Method>();
@@ -70,12 +75,25 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
         callbacks.put(serverState, callback);
     }
 
+    /**
+     * Initialize TCPServer
+     *
+     * @param port          Listenning port
+     * @param maxConnection maximum queue incoming connections
+     * @throws IOException
+     */
     private void init(int port, int maxConnection) throws IOException {
+        // TODO 使用ThreadPoolExecutor来做线程池
         workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
         serverSocket = new ServerSocket(port, maxConnection);
         state = ServerState.CREATED;
     }
 
+    /**
+     * Change TCPServer state and invoke correspoding callbacks
+     * @param before
+     * @param after
+     */
     private void stateTransition(ServerState before, ServerState after) {
         if (this.state != before) {
             throw new IllegalStateException(String.format(
@@ -93,7 +111,7 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
             try {
                 permission.acquire();
                 LOGGER.log(Level.INFO, "[TCPServer] start listenning");
-                listening();
+                listeningLoop();
                 LOGGER.log(Level.INFO, "[TCPServer] complete listenning");
             } catch (InterruptedException e) {
                 LOGGER.log(Level.INFO, "[TCPServer] being interrupted!");
@@ -112,12 +130,24 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
      * Start the TCP server
      */
     public void startServer() {
-        stateTransition(ServerState.CREATED, ServerState.LISTENNING);
-        if (isShutDown()) {
-            throw new IllegalStateException("Server start fail, has been started!");
+        switch (this.state) {
+            case CREATED:
+                stateTransition(ServerState.CREATED, ServerState.LISTENNING);
+                break;
+
+            case LISTENNING:
+            case LISTEN_ERROR:
+            case STOPPED:
+            case SERVICE_ERROR:
+            case SHUTDOWN:
+                throw new IllegalStateException(
+                        "TCPServer start fail, may has been started! state:" + this.state);
+
+            default:
+                break;
         }
 
-        // permit server to start
+        // permit server to start, increase the semaphore
         permission.release();
         // start server thread
         super.start();
@@ -155,17 +185,17 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
      * Listenning incoming connections.
      * Main logic for the server.
      */
-    private void listening() {
+    private void listeningLoop() {
         Socket clientSocket = null;
         ObjectOutputStream out = null;
         ObjectInputStream in = null;
         try {
-            while (isShutDown() && !isStopped()) {
+            while (!isShutDown() && !isStopped()) {
                 clientSocket = serverSocket.accept();
+                // TODO Why should create OOS first?
                 out = new ObjectOutputStream(clientSocket.getOutputStream());
                 in = new ObjectInputStream(clientSocket.getInputStream());
-                //TODO
-                // read methond name and arguments from in
+                // read methond name and arguments from inputStream
                 Method method = (Method) in.readObject();
                 Object[] args = (Object[]) in.readObject();
 
