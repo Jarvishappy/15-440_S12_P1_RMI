@@ -5,6 +5,7 @@ import rmi.server.TCPServer;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -191,6 +192,10 @@ public class Skeleton<T> {
         if (null != tcpServer) {
             tcpServer.stopListenning();
         }
+    }
+
+    public SocketAddress getServerSockAddress() {
+        return this.tcpServer.getServerSocket().getLocalSocketAddress();
     }
 
 }

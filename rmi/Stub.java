@@ -56,7 +56,11 @@ public abstract class Stub {
      */
     public static <T> T create(Class<T> c, Skeleton<T> skeleton)
             throws UnknownHostException {
-        throw new UnsupportedOperationException("not implemented");
+        //throw new UnsupportedOperationException("not implemented");
+        InvocationHandler handler = new StubInvocationHandler((InetSocketAddress) skeleton.getServerSockAddress());
+        @SuppressWarnings("unchecked")
+        T proxyInstance = (T) Proxy.newProxyInstance(c.getClassLoader(), new Class<?>[] { c }, handler);
+        return proxyInstance;
     }
 
     /**
@@ -114,15 +118,21 @@ public abstract class Stub {
      *                              this interface cannot be dynamically created.
      */
     public static <T> T create(Class<T> c, InetSocketAddress address) {
-//        throw new UnsupportedOperationException("not implemented");
         InvocationHandler handler = new StubInvocationHandler(address);
-        T instance = (T) Proxy.newProxyInstance(c.getClassLoader(), new Class[] { c }, handler);
+        /**
+         * Create a proxy instance for Class c, with a method invocation handler.
+         * When call method on the proxy instance, the invocation is diapatched to {@link java.lang.reflect.InvocationHandler}.
+         * Since parameter c is T.class actually, it is safe to do the casting
+         */
+        @SuppressWarnings("unchecked")
+        T instance = (T) Proxy.newProxyInstance(c.getClassLoader(), new Class<?>[] { c }, handler);
         return instance;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, RMIException {
         InetSocketAddress address = new InetSocketAddress(Config.SERVER_HOST, Config.LISTENING_PORT);
         FileServer fileServer = Stub.create(FileServer.class, address);
+        fileServer.size("/etc/hosts");
         System.out.println("done!");
     }
 }

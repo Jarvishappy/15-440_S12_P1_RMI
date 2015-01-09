@@ -194,6 +194,8 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
                 clientSocket = serverSocket.accept();
                 // TODO Why should create OOS first?
                 out = new ObjectOutputStream(clientSocket.getOutputStream());
+                // flush it before crate OIS
+                out.flush();
                 in = new ObjectInputStream(clientSocket.getInputStream());
                 // read methond name and arguments from inputStream
                 Method method = (Method) in.readObject();
@@ -227,9 +229,7 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
             } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "close socket or stream error!", e);
             }
-
         }
-
     }
 
     @Override
@@ -261,4 +261,7 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
         return this.state == ServerState.STOPPED;
     }
 
+    public ServerSocket getServerSocket() {
+        return serverSocket;
+    }
 }

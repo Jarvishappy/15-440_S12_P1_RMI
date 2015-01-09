@@ -27,6 +27,8 @@ public class StubInvocationHandler implements InvocationHandler {
         Socket socket = new Socket(serverSockAddr.getAddress(), serverSockAddr.getPort());
         // not need to connect like in C
         ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+        // flush before
+        out.flush();
         ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
 
         // write out method and args to server
