@@ -132,7 +132,11 @@ public abstract class Stub {
     public static void main(String[] args) throws IOException, RMIException {
         InetSocketAddress address = new InetSocketAddress(Config.SERVER_HOST, Config.LISTENING_PORT);
         FileServer fileServer = Stub.create(FileServer.class, address);
-        fileServer.size("/etc/hosts");
+        FileServer fileServer2 = Stub.create(FileServer.class, address);
+        System.out.println("fileServer.equals(fileServer2): " + fileServer.equals(fileServer2));
+        System.out.println("toString(): " + fileServer.toString());
+        System.out.println("fileServer.hashCode(): " + fileServer.hashCode());
+        System.out.println("fileServer2.hashCode(): " + fileServer2.hashCode());
         System.out.println("done!");
     }
 }
