@@ -1,10 +1,10 @@
 package rmi.server;
 
+import rmi.RMIException;
 import rmi.Skeleton;
 import rmi.config.Config;
 import rmi.server.callback.Callback;
 import rmi.server.callback.MethodInvocationCallback;
-import rmi.server.event.Subject;
 import rmi.server.task.CallbackTask;
 import rmi.server.task.MethodInvocationTask;
 
@@ -28,11 +28,26 @@ import java.util.logging.Logger;
 /**
  * An TCP multithreaded server implementation
  */
-public class TCPServer<T> extends RMIServer<T> implements Subject {
+public class TCPServer<T> extends Thread {
     private static final Logger LOGGER = Logger.getLogger("TCPServer");
 
-    private ServerState state;   // TCP Server state
+    /**
+     * The remote interface type
+     */
+    protected Class<T> service;
 
+    /**
+     * Actual object offering serivce to client
+     */
+    protected T serviceImpl;
+
+    /**
+     * Reference to the containing skeleton of the server
+     */
+    protected Skeleton<T> skeleton;
+
+
+    private ServerState state;   // TCP Server state
     private ExecutorService workerThreads;
     private ServerSocket serverSocket;
 
@@ -49,31 +64,56 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
     /**
      * Constructors **
      */
-    public TCPServer(Skeleton<T> s, Class<T> clazz, T serverImpl, InetSocketAddress address)
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, InetSocketAddress address)
             throws IOException {
-        super(s, clazz, serverImpl);
-        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
-        serverSocket = new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress());
-        state = ServerState.CREATED;
+        this.skeleton = s;
+        this.service = clazz;
+        this.serviceImpl = serviceImpl;
+        this.serverSocket = new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress());
+        initServer();
     }
 
     public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl)
             throws IOException {
-        super(s, clazz, serviceImpl);
-        init(Config.LISTENING_PORT, Config.MAX_CONNECTION);
+        this.skeleton = s;
+        this.service = clazz;
+        this.serviceImpl = serviceImpl;
+        this.serverSocket = new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
+        initServer();
+    }
+
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, int port, int maxConnection)
+            throws IOException {
+        this.skeleton = s;
+        this.service = clazz;
+        this.serviceImpl = serviceImpl;
+        this.serverSocket = new ServerSocket(port, maxConnection);
+        initServer();
+    }
+    /*** end Constructors ***/
+
+
+    /**
+     * Initialize TCPServer
+     *
+     * @throws IOException
+     */
+    private void initServer() throws IOException {
+        // TODO 使用ThreadPoolExecutor来做线程池
+        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
+        state = ServerState.CREATED;
+
         try {
             addCallback(ServerState.STOPPED, Skeleton.class.getDeclaredMethod("stopped", Throwable.class));
-            addCallback(ServerState.LISTEN_ERROR, Skeleton.class.getDeclaredMethod("listen_error", Exception.class));
+            addCallback(ServerState.LISTEN_ERROR,
+                    Skeleton.class.getDeclaredMethod("listen_error", Exception.class));
+            addCallback(ServerState.SERVICE_ERROR, Skeleton.class.getDeclaredMethod("service_error",
+                    RMIException.class));
         } catch (NoSuchMethodException e) {
             LOGGER.log(Level.WARNING, "[TCPServer] add callbacks FAIL!", e);
         }
-    }
 
-    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, int port, int maxConnection) throws IOException {
-        super(s, clazz, serviceImpl);
-        init(port, maxConnection);
     }
-    /*** end Constructors ***/
 
     /**
      * Add callback to specified server state
@@ -86,20 +126,6 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
             callbacks = new HashMap<ServerState, Method>();
         }
         callbacks.put(serverState, callback);
-    }
-
-    /**
-     * Initialize TCPServer
-     *
-     * @param port          Listenning port
-     * @param maxConnection maximum queue incoming connections
-     * @throws IOException
-     */
-    private void init(int port, int maxConnection) throws IOException {
-        // TODO 使用ThreadPoolExecutor来做线程池
-        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
-        serverSocket = new ServerSocket(port, maxConnection);
-        state = ServerState.CREATED;
     }
 
     /**
@@ -205,7 +231,6 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
         try {
             while (!isShutDown() && !isStopped()) {
                 clientSocket = serverSocket.accept();
-                // TODO Why should create OOS first?
                 out = new ObjectOutputStream(clientSocket.getOutputStream());
                 // flush it before crate OIS
                 out.flush();
@@ -245,7 +270,6 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
         }
     }
 
-    @Override
     public void stateChanged(Object... arg) {
         invokeCallback(arg);
     }
