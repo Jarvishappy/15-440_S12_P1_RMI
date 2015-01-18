@@ -3,15 +3,15 @@ package rmi.server;
 /**
  * Server state transition:
  *
- * CREATED --> RUNNING[ LISTENNING, STOPPED ] --> SHUTDOWN
+ * CREATED --> RUNNING[ LISTENING, STOPPED ] --> SHUTDOWN
  *
  */
 public enum ServerState {
     CREATED(1),
 
     /** Running **/
-    LISTENNING(2),
-    STOPPED(3), // stop listenning
+    LISTENING(2),
+    STOPPED(3), // stop listening
 
     SHUTDOWN(4),
 

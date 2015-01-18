@@ -142,6 +142,7 @@ public class Skeleton<T> {
      */
     protected void stopped(Throwable cause) {
         // TODO: callback when listening thread EXIT
+        LOGGER.log(Level.INFO, "callback for listening thread exits");
     }
 
     /**

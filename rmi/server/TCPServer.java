@@ -128,21 +128,6 @@ public class TCPServer<T> extends Thread {
         callbacks.put(serverState, callback);
     }
 
-    /**
-     * Change TCPServer state and invoke correspoding callbacks
-     * @param before
-     * @param after
-     */
-    private void stateTransition(ServerState before, ServerState after) {
-        if (this.state != before) {
-            throw new IllegalStateException(String.format(
-                    "Server state transition to [%s] fail, not in the [%s] state!", after.name(), before.name()));
-        }
-
-        this.state = after;
-        stateChanged();
-    }
-
 
     @Override
     public void run() {
@@ -171,10 +156,10 @@ public class TCPServer<T> extends Thread {
     public void startServer() {
         switch (this.state) {
             case CREATED:
-                stateTransition(ServerState.CREATED, ServerState.LISTENNING);
+                stateTransition(ServerState.CREATED, ServerState.LISTENING);
                 break;
 
-            case LISTENNING:
+            case LISTENING:
             case LISTEN_ERROR:
             case STOPPED:
             case SERVICE_ERROR:
@@ -194,17 +179,18 @@ public class TCPServer<T> extends Thread {
 
     /**
      * Pauses listening for incoming connection.
-     * Causes listening thread returns from listening(), blocking on permission.acquire().
+     * Causes listening thread returns from listeningLoop(), blocking on permission.acquire().
      */
     public void stopListenning() {
-        stateTransition(ServerState.LISTENNING, ServerState.STOPPED);
+        stateTransition(ServerState.LISTENING, ServerState.STOPPED);
     }
 
     /**
      * Resumes listening
      */
     public void resumeServer() {
-        stateTransition(ServerState.STOPPED, ServerState.LISTENNING);
+        stateTransition(ServerState.STOPPED, ServerState.LISTENING);
+        // increase permission to allow listening thread to wake up
         permission.release();
     }
 
@@ -221,7 +207,7 @@ public class TCPServer<T> extends Thread {
 
 
     /**
-     * Listenning incoming connections.
+     * Listening incoming connections.
      * Main logic for the server.
      */
     private void listeningLoop() {
@@ -251,8 +237,9 @@ public class TCPServer<T> extends Thread {
 
             }
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Exception occured while listenning!", e);
-            stateTransition(ServerState.LISTENNING, ServerState.LISTEN_ERROR);
+            LOGGER.log(Level.SEVERE, "Exception occured while listenning!", e);
+            stateTransition(ServerState.LISTENING, ServerState.LISTEN_ERROR, e);
+            stateTransition(ServerState.LISTEN_ERROR, ServerState.STOPPED, e);
         } finally {
             try {
                 if (null != clientSocket) {
@@ -270,8 +257,21 @@ public class TCPServer<T> extends Thread {
         }
     }
 
-    public void stateChanged(Object... arg) {
-        invokeCallback(arg);
+
+    /**
+     * Change TCPServer state and invoke correspoding callbacks
+     * @param before
+     * @param after
+     * @param callbackArgs arguments for callbacks in Skeleton
+     */
+    private void stateTransition(ServerState before, ServerState after, Object... callbackArgs) {
+        if (this.state != before) {
+            throw new IllegalStateException(String.format(
+                    "Server state transition to [%s] fail, not in the [%s] state!", after.name(), before.name()));
+        }
+
+        this.state = after;
+        invokeCallback(callbackArgs);
     }
 
     /**
