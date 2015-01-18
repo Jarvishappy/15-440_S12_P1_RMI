@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Arrays;
@@ -45,6 +46,17 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
      */
     private Semaphore permission = new Semaphore(0);
 
+    /**
+     * Constructors **
+     */
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serverImpl, InetSocketAddress address)
+            throws IOException {
+        super(s, clazz, serverImpl);
+        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
+        serverSocket = new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress());
+        state = ServerState.CREATED;
+    }
+
     public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl)
             throws IOException {
         super(s, clazz, serviceImpl);
@@ -61,6 +73,7 @@ public class TCPServer<T> extends RMIServer<T> implements Subject {
         super(s, clazz, serviceImpl);
         init(port, maxConnection);
     }
+    /*** end Constructors ***/
 
     /**
      * Add callback to specified server state

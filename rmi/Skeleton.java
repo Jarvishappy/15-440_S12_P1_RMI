@@ -59,25 +59,12 @@ public class Skeleton<T> {
      *                              <code>server</code> is <code>null</code>.
      */
     public Skeleton(Class<T> c, T server) {
-        if (null == c || null == server) {
-            throw new NullPointerException("Parameter c or server is null");
-        }
-
-        // check if c is a remote interface; if each methods throw RMIException
-        Method[] methods = c.getMethods();
-        for (Method method : methods) {
-            Class<?>[] exceptions = method.getExceptionTypes();
-            for (Class<?> exception : exceptions) {
-                if (!exception.getName().equals(RMIException.class.getName())) {
-                    throw new Error("Not a remote interface");
-                }
-            }
-        }
-
+        verifyParams(c, server);
         try {
             tcpServer = new TCPServer<T>(this, c, server);
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "init tcp server error!");
+            throw new SkeletonException("Create tcp server error!", e);
         }
     }
 
@@ -101,7 +88,37 @@ public class Skeleton<T> {
      *                              <code>server</code> is <code>null</code>.
      */
     public Skeleton(Class<T> c, T server, InetSocketAddress address) {
-        throw new UnsupportedOperationException("not implemented");
+        verifyParams(c, server);
+
+        try {
+            tcpServer = new TCPServer<T>(this, c, server, address);
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "init tcp server error!");
+            throw new SkeletonException("Create tcp server error!", e);
+        }
+    }
+
+    /**
+     * @throws Error                If <code>c</code> does not represent a remote interface -
+     *                              an interface whose methods are all marked as throwing
+     *                              <code>RMIException</code>.
+     * @throws NullPointerException If either of <code>c</code> or
+     */
+    private void verifyParams(Class<T> c, T server) {
+        if (null == c || null == server) {
+            throw new NullPointerException("Parameter c or server is null");
+        }
+
+        // check if c is a remote interface; if each methods throw RMIException
+        Method[] methods = c.getMethods();
+        for (Method method : methods) {
+            Class<?>[] exceptions = method.getExceptionTypes();
+            for (Class<?> exception : exceptions) {
+                if (!exception.getName().equals(RMIException.class.getName())) {
+                    throw new Error("Not a remote interface");
+                }
+            }
+        }
     }
 
     /**
