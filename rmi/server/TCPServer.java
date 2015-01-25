@@ -269,8 +269,8 @@ public class TCPServer<T> extends Thread {
     private void stateTransition(ServerState before, ServerState after, Object... callbackArgs) {
         if (this.state != before) {
             throw new IllegalStateException(String.format(
-                    "Current state: [%s]\nServer state transition to [%s] fail, not in the [%s] state! ",
-                    this.state.name(), after.name(), before.name()));
+                    "Current state: [%s]\nServer state transition [%s]->[%s] fail! ",
+                    this.state.name(), before.name(), after.name()));
         }
 
         this.state = after;
