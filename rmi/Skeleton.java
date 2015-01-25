@@ -6,6 +6,9 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -113,10 +116,10 @@ public class Skeleton<T> {
         Method[] methods = c.getMethods();
         for (Method method : methods) {
             Class<?>[] exceptions = method.getExceptionTypes();
-            for (Class<?> exception : exceptions) {
-                if (!exception.getName().equals(RMIException.class.getName())) {
-                    throw new Error("Not a remote interface");
-                }
+            Set<Class<?>> exceptionSet = new HashSet<Class<?>>();
+            Collections.addAll(exceptionSet, exceptions);
+            if (!exceptionSet.contains(RMIException.class)) {
+                throw new Error("Not a remote interface");
             }
         }
     }
