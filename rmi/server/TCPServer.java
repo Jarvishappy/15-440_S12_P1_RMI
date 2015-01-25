@@ -178,11 +178,13 @@ public class TCPServer<T> extends Thread {
     }
 
     /**
-     * Pauses listening for incoming connection.
+     * Pauses listening for incoming connection, if server is listening.
      * Causes listening thread returns from listeningLoop(), blocking on permission.acquire().
      */
     public void stopListenning() {
-        stateTransition(ServerState.LISTENING, ServerState.STOPPED);
+        if (this.state == ServerState.LISTENING) {
+            stateTransition(ServerState.LISTENING, ServerState.STOPPED);
+        }
     }
 
     /**
@@ -267,7 +269,8 @@ public class TCPServer<T> extends Thread {
     private void stateTransition(ServerState before, ServerState after, Object... callbackArgs) {
         if (this.state != before) {
             throw new IllegalStateException(String.format(
-                    "Server state transition to [%s] fail, not in the [%s] state!", after.name(), before.name()));
+                    "Current state: [%s]\nServer state transition to [%s] fail, not in the [%s] state! ",
+                    this.state.name(), after.name(), before.name()));
         }
 
         this.state = after;
