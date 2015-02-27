@@ -49,7 +49,7 @@ public class TCPServer<T> extends Thread {
 
     private ServerState state;   // TCP Server state
     private ExecutorService workerThreads;
-    private ServerSocket serverSocket;
+    private InetSocketAddress address;  // Server socket address
 
     /**
      * 存放Skelton类中的事件回调函数
@@ -69,7 +69,7 @@ public class TCPServer<T> extends Thread {
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
-        this.serverSocket = new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress());
+        this.address = address;
         initServer();
     }
 
@@ -78,7 +78,6 @@ public class TCPServer<T> extends Thread {
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
-        this.serverSocket = new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
         initServer();
     }
 
@@ -87,7 +86,6 @@ public class TCPServer<T> extends Thread {
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
-        this.serverSocket = new ServerSocket(port, maxConnection);
         initServer();
     }
     /*** end Constructors ***/
@@ -217,6 +215,11 @@ public class TCPServer<T> extends Thread {
         ObjectOutputStream out = null;
         ObjectInputStream in = null;
         try {
+
+            ServerSocket serverSocket = this.address != null ?
+                    new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress()) :
+                    new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
+
             while (!isShutDown() && !isStopped()) {
                 clientSocket = serverSocket.accept();
                 out = new ObjectOutputStream(clientSocket.getOutputStream());
@@ -301,7 +304,7 @@ public class TCPServer<T> extends Thread {
         return this.state == ServerState.STOPPED;
     }
 
-    public ServerSocket getServerSocket() {
-        return serverSocket;
+    public InetSocketAddress getAddress() {
+        return address;
     }
 }

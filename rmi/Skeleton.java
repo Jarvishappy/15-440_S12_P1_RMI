@@ -216,7 +216,7 @@ public class Skeleton<T> {
     }
 
     public SocketAddress getServerSockAddress() {
-        return this.tcpServer.getServerSocket().getLocalSocketAddress();
+        return this.tcpServer.getAddress();
     }
 
 }
