@@ -15,6 +15,7 @@ import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -61,11 +62,14 @@ public class TCPServer<T> extends Thread {
      */
     private Semaphore permission = new Semaphore(0);
 
+    public static final Throwable DUMMY_THROWABLE = new Throwable("dumb");
+
     /**
      * Constructors **
      */
     public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, InetSocketAddress address)
             throws IOException {
+        super("TCPServer");
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
@@ -75,6 +79,7 @@ public class TCPServer<T> extends Thread {
 
     public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl)
             throws IOException {
+        super("TCPServer");
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
@@ -83,6 +88,7 @@ public class TCPServer<T> extends Thread {
 
     public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, int port, int maxConnection)
             throws IOException {
+        super("TCPServer");
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
@@ -132,11 +138,11 @@ public class TCPServer<T> extends Thread {
         while (!isShutDown()) {
             try {
                 permission.acquire();
-                LOGGER.log(Level.INFO, "[TCPServer] start listenning");
+                LOGGER.info("[TCPServer] start listenning");
                 listeningLoop();
-                LOGGER.log(Level.INFO, "[TCPServer] complete listenning");
+                LOGGER.info("[TCPServer] complete listenning");
             } catch (InterruptedException e) {
-                LOGGER.log(Level.INFO, "[TCPServer] being interrupted!");
+                LOGGER.info("[TCPServer] being interrupted!");
             }
 
         }
@@ -145,13 +151,6 @@ public class TCPServer<T> extends Thread {
 
     @Override
     public void start() {
-        throw new UnsupportedOperationException("Please call startServer() to start");
-    }
-
-    /**
-     * Start the TCP server
-     */
-    public void startServer() {
         switch (this.state) {
             case CREATED:
                 stateTransition(ServerState.CREATED, ServerState.LISTENING);
@@ -181,7 +180,7 @@ public class TCPServer<T> extends Thread {
      */
     public void stopListenning() {
         if (this.state == ServerState.LISTENING) {
-            stateTransition(ServerState.LISTENING, ServerState.STOPPED);
+            stateTransition(ServerState.LISTENING, ServerState.STOPPED, DUMMY_THROWABLE);
         }
     }
 
@@ -221,28 +220,37 @@ public class TCPServer<T> extends Thread {
                     new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
 
             while (!isShutDown() && !isStopped()) {
-                clientSocket = serverSocket.accept();
-                out = new ObjectOutputStream(clientSocket.getOutputStream());
-                // flush it before crate OIS
-                out.flush();
-                in = new ObjectInputStream(clientSocket.getInputStream());
-                // read methond name and arguments from inputStream
-                Method method = (Method) in.readObject();
-                Object[] args = (Object[]) in.readObject();
+                try {
+                    LOGGER.info("[TCPServer] blocking on accept()...");
+                    clientSocket = serverSocket.accept();
+                    LOGGER.info("[TCPServer] accepted a new connection...");
+                    out = new ObjectOutputStream(clientSocket.getOutputStream());
+                    // flush it before crate OIS
+                    out.flush();
+                    in = new ObjectInputStream(clientSocket.getInputStream());
+                    // read methond name and arguments from inputStream
+                    Method method = (Method) in.readObject();
+                    Object[] args = (Object[]) in.readObject();
 
-                LOGGER.info(String.format("Got a RMI connection:\nmethod=>%s\nargs=>%s", method.getName(),
-                        Arrays.toString(args)));
+                    LOGGER.info(String.format("Got a RMI connection:\nmethod=>%s\nargs=>%s", method.getName(),
+                            Arrays.toString(args)));
 
-                // submit a task to workerThreads
-                Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
-                Callback callback = new MethodInvocationCallback(out);
-                CallbackTask<T> task = new CallbackTask<T>(this.skeleton, methodInvocation, callback);
+                    // submit a task to workerThreads
+                    Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
+                    Callback callback = new MethodInvocationCallback(out);
+                    CallbackTask<T> task = new CallbackTask<T>(this.skeleton, methodInvocation, callback);
 
-                workerThreads.submit(task);
+                    workerThreads.submit(task);
+                } catch (SocketException e) {
+                    LOGGER.log(Level.WARNING, "Socket exception", e);
 
+                }
             }
+
+            LOGGER.info("[TCPServer] exit the listening loop");
+
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Exception occured while listenning!", e);
+            LOGGER.log(Level.SEVERE, "Server exception while listenning!", e);
             stateTransition(ServerState.LISTENING, ServerState.LISTEN_ERROR, e);
             stateTransition(ServerState.LISTEN_ERROR, ServerState.STOPPED, e);
         } finally {

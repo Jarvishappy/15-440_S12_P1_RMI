@@ -144,6 +144,9 @@ public class Skeleton<T> {
      *              <code>null</code> if the skeleton stopped normally.
      */
     protected void stopped(Throwable cause) {
+        if (cause != TCPServer.DUMMY_THROWABLE) {
+            LOGGER.log(Level.SEVERE, cause.getMessage(), cause);
+        }
         // TODO: callback when listening thread EXIT
         LOGGER.log(Level.INFO, "callback for listening thread exits");
     }
@@ -195,7 +198,7 @@ public class Skeleton<T> {
      */
     public synchronized void start() throws RMIException {
         if (null != tcpServer) {
-            tcpServer.startServer();
+            tcpServer.start();
         }
     }
 
