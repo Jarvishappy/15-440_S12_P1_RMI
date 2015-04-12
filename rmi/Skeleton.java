@@ -1,14 +1,10 @@
 package rmi;
 
+import rmi.server.ServerState;
 import rmi.server.TCPServer;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,13 +58,11 @@ public class Skeleton<T> {
      *                              <code>server</code> is <code>null</code>.
      */
     public Skeleton(Class<T> c, T server) {
-        verifyParams(c, server);
-        try {
-            tcpServer = new TCPServer<T>(this, c, server);
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "init tcp server error!");
-            throw new SkeletonException("Create tcp server error!", e);
+        if (null == c || null == server) {
+            throw new NullPointerException("Parameter c or server is null");
         }
+        Utils.verifyInterface(c);
+        tcpServer = new TCPServer<>(this, c, server);
     }
 
     /**
@@ -91,37 +85,11 @@ public class Skeleton<T> {
      *                              <code>server</code> is <code>null</code>.
      */
     public Skeleton(Class<T> c, T server, InetSocketAddress address) {
-        verifyParams(c, server);
-
-        try {
-            tcpServer = new TCPServer<T>(this, c, server, address);
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "init tcp server error!");
-            throw new SkeletonException("Create tcp server error!", e);
-        }
-    }
-
-    /**
-     * @throws Error                If <code>c</code> does not represent a remote interface -
-     *                              an interface whose methods are all marked as throwing
-     *                              <code>RMIException</code>.
-     * @throws NullPointerException If either of <code>c</code> or
-     */
-    private void verifyParams(Class<T> c, T server) {
         if (null == c || null == server) {
             throw new NullPointerException("Parameter c or server is null");
         }
-
-        // check if c is a remote interface; if each methods throw RMIException
-        Method[] methods = c.getMethods();
-        for (Method method : methods) {
-            Class<?>[] exceptions = method.getExceptionTypes();
-            Set<Class<?>> exceptionSet = new HashSet<Class<?>>();
-            Collections.addAll(exceptionSet, exceptions);
-            if (!exceptionSet.contains(RMIException.class)) {
-                throw new Error("Not a remote interface");
-            }
-        }
+        Utils.verifyInterface(c);
+        tcpServer = new TCPServer<>(this, c, server, address);
     }
 
     /**
@@ -198,6 +166,11 @@ public class Skeleton<T> {
      */
     public synchronized void start() throws RMIException {
         if (null != tcpServer) {
+            try {
+                tcpServer.initServer();
+            } catch (IOException e) {
+                throw new RMIException(e.getMessage(), e);
+            }
             tcpServer.start();
         }
     }
@@ -220,12 +193,20 @@ public class Skeleton<T> {
         // 3. server may then restart
 
         if (null != tcpServer) {
-            tcpServer.stopServer();
+            try {
+                tcpServer.stopServer();
+            } catch (IOException e) {
+                throw new RuntimeException(e.getMessage(), e);
+            }
         }
     }
 
-    public SocketAddress getServerSockAddress() {
+    public InetSocketAddress getServerSockAddress() {
         return this.tcpServer.getAddress();
+    }
+
+    public boolean isStart() {
+        return ServerState.RUNNING == tcpServer.getServerState();
     }
 
 }

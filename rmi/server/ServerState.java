@@ -3,25 +3,12 @@ package rmi.server;
 /**
  * Server state transition:
  *
- * CREATED --> LISTENING --> STOPPED
+ * CREATED --> INITED --> RUNNING --> STOPPED
  *
  */
 public enum ServerState {
-    CREATED(1),
-
-    /** Running **/
-    LISTENING(2),
-    STOPPED(3);
-
-    private ServerState(int v) {
-        this.value = v;
-    }
-
-    private int value;
-
-    public int getValue() {
-        return value;
-    }
-
-
+    CREATED,    // TCPServer对象被创建
+    INITED,     // TCPServer对象初始化成功
+    RUNNING,    // Listening thread成功启动
+    STOPPED     // Listening thread terminated
 }

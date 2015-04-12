@@ -29,6 +29,8 @@ import java.util.logging.Logger;
 public class TCPServer<T> extends Thread {
     private static final Logger LOGGER = Logger.getLogger("TCPServer");
 
+    private static final int ANY_PORT = 0;
+
     /**
      * The remote interface type
      */
@@ -44,10 +46,13 @@ public class TCPServer<T> extends Thread {
      */
     protected Skeleton<T> skeleton;
 
-
-    private ServerState state;   // TCP Server state
-    private ExecutorService workerThreads;
+    /**
+     * Access to state must be synchronized
+     */
+    private volatile ServerState state;   // TCP Server state
+    private ExecutorService workerThreads;  // service thread pool
     private InetSocketAddress address;  // Server socket address
+    private ServerSocket serverSocket;
 
 
     private EventHandler eventHandler;
@@ -57,47 +62,41 @@ public class TCPServer<T> extends Thread {
     /**
      * Constructors **
      */
-    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, InetSocketAddress address)
-            throws IOException {
-        super("TCPServer");
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, InetSocketAddress address) {
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
         this.address = address;
-        initServer();
+        this.state = ServerState.CREATED;
     }
 
-    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl)
-            throws IOException {
-        super("TCPServer");
+    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl) {
         this.skeleton = s;
         this.service = clazz;
         this.serviceImpl = serviceImpl;
-        initServer();
+        this.state = ServerState.CREATED;
     }
 
-    public TCPServer(Skeleton<T> s, Class<T> clazz, T serviceImpl, int port, int maxConnection)
-            throws IOException {
-        super("TCPServer");
-        this.skeleton = s;
-        this.service = clazz;
-        this.serviceImpl = serviceImpl;
-        initServer();
-    }
     /*** end Constructors ***/
 
 
     /**
-     * Initialize TCPServer
-     *
-     * @throws IOException
+     * Initialize TCPServer, must call this method before start()
      */
-    private void initServer() throws IOException {
+    public void initServer() throws IOException {
+        setName("TCPServer");
+
+        // assign a default address
+        if (null == getAddress()) {
+            address = new InetSocketAddress(ANY_PORT);
+        }
         // TODO 使用ThreadPoolExecutor来做线程池
         workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
-
-        state = ServerState.CREATED;
-        eventHandler = new EventHandler(this.skeleton);
+        stateTransition(ServerState.CREATED, ServerState.INITED);
+        eventHandler = new EventHandler(skeleton);
+        serverSocket = address != null ?
+                new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress()) :
+                new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
     }
 
 
@@ -128,55 +127,34 @@ public class TCPServer<T> extends Thread {
     @Override
     public void start() {
         switch (this.state) {
-            case CREATED:
-                stateTransition(ServerState.CREATED, ServerState.LISTENING);
+            case INITED:
+                stateTransition(ServerState.INITED, ServerState.RUNNING);
                 break;
 
-            case LISTENING:
+            case CREATED:
+            case RUNNING:
             case STOPPED:
                 throw new IllegalStateException(
-                        "TCPServer start fail, may has been started! state:" + this.state);
+                        "TCPServer start fail, may has been started! state:" + getServerState());
 
             default:
                 break;
         }
 
-        // permit server to start, increase the semaphore
-        // permission.release();
         // start server thread
         super.start();
     }
 
     /**
-     * Pauses listening for incoming connection, if server is listening.
-     * Causes listening thread returns from listeningLoop(), blocking on permission.acquire().
+     * Terminate the listening thread if the server is in LISTENING state
      */
-    public void stopServer() {
-        if (this.state == ServerState.LISTENING) {
+    public void stopServer() throws IOException {
+        if (!isStopped()) {
             // 不能马上调用callback，因为server还没完全关闭
-            stateTransition(ServerState.LISTENING, ServerState.STOPPED);
+            stateTransition(ServerState.RUNNING, ServerState.STOPPED);
+            serverSocket.close();
         }
     }
-
-    /**
-     * Resumes listening
-     */
-/*    public void resumeServer() {
-        stateTransition(ServerState.STOPPED, ServerState.LISTENING);
-        // increase permission to allow listening thread to wake up
-        // permission.release();
-    }*/
-
-
-    /**
-     * Shut down the TCP server, shut down all inner thread pool.
-     */
-/*    public void shutdown() {
-        if (this.state == ServerState.CREATED || this.state == ServerState.SHUTDOWN) {
-            throw new IllegalStateException("Server isn't running!");
-        }
-        this.state = ServerState.SHUTDOWN;
-    }*/
 
 
     /**
@@ -184,24 +162,33 @@ public class TCPServer<T> extends Thread {
      * Main logic for the server.
      */
     private void listeningLoop() {
-        try (ServerSocket serverSocket = this.address != null ?
-                new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress()) :
-                new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION)) {
-
+        try {
             while (!isStopped()) {
                 LOGGER.info("[TCPServer] blocking on accept()...");
-                ObjectInputStream in = null;
+                //ObjectInputStream in = null;
                 try (Socket clientSocket = serverSocket.accept();
                         ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream())
                 ) {
                     LOGGER.info("[TCPServer] accepted a new connection...");
                     // flush it before crate OIS
                     out.flush();
-                    in = new ObjectInputStream(clientSocket.getInputStream());
 
-                    // read methond name and arguments from inputStream
-                    Method method = (Method) in.readObject();
-                    Object[] args = (Object[]) in.readObject();
+                    // 创建OIS的时候会阻塞在socket.read()方法上，因为OIS的constructor里需要先读取packet的header，
+                    // 因此如果peer socket在这时关掉了，那么这里就会抛异常了，也就是无法读取到客户端传来的方法和参数了，
+                    // 那么这时这个连接是没有意义的了，可以抛弃掉
+                    Method method;
+                    Object[] args;
+
+                    try (ObjectInputStream in = new ObjectInputStream(clientSocket.getInputStream())) {
+                        // read methond name and arguments from inputStream
+                        method = (Method) in.readObject();
+                        args = (Object[]) in.readObject();
+
+                    } catch (SocketException e) {
+                        LOGGER.log(Level.WARNING, "Socket exception occurred during create ObjectInputStream: ", e);
+                        continue;
+                    }
+
 
                     LOGGER.info(String.format("Got a RMI connection:\nmethod=>%s\nargs=>%s", method.getName(),
                             Arrays.toString(args)));
@@ -235,17 +222,9 @@ public class TCPServer<T> extends Thread {
 
                     workerThreads.submit(task);
                 } catch (SocketException e) {
-                    LOGGER.log(Level.WARNING, "Socket exception occured: ", e);
+                    LOGGER.log(Level.WARNING, "Socket exception while listening: ", e);
                 } catch (IOException e) {
-                    LOGGER.log(Level.WARNING, "IO exception occured: ", e);
-                } finally {
-                    try {
-                        if (in != null) {
-                            in.close();
-                        }
-                    } catch (IOException e) {
-                        LOGGER.log(Level.WARNING, "close object input stream error!", e);
-                    }
+                    LOGGER.log(Level.WARNING, "IO exception while listening: ", e);
                 }
             }
 
@@ -253,24 +232,9 @@ public class TCPServer<T> extends Thread {
 
             // 除IO异常之外的，认为发生了LISTEN_ERROR
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Server exception while listenning!", e);
+            LOGGER.log(Level.SEVERE, "Server exception while listenning:", e);
             onEventOccur(ServerEvent.LISTEN_ERROR, e);
         }
-/*        finally {
-            try {
-                if (null != clientSocket) {
-                    clientSocket.close();
-                }
-                if (null != out) {
-                    out.close();
-                }
-                if (null != in) {
-                    in.close();
-                }
-            } catch (IOException e) {
-                LOGGER.log(Level.WARNING, "close socket or stream error!", e);
-            }
-        }*/
     }
 
     private void onEventOccur(ServerEvent event, Object... args) {
@@ -283,22 +247,25 @@ public class TCPServer<T> extends Thread {
      * @param before
      * @param after
      */
-    private void stateTransition(ServerState before, ServerState after) {
-        if (this.state != before) {
+    private synchronized void stateTransition(ServerState before, ServerState after) {
+        if (getServerState() != before) {
             throw new IllegalStateException(String.format(
                     "Current state: [%s]\nServer state transition [%s]->[%s] fail! ",
-                    this.state.name(), before.name(), after.name()));
+                    getServerState().name(), before.name(), after.name()));
         }
 
         this.state = after;
     }
 
-
-    private boolean isStopped() {
-        return this.state == ServerState.STOPPED;
+    public synchronized boolean isStopped() {
+        return getServerState() == ServerState.STOPPED;
     }
 
     public InetSocketAddress getAddress() {
         return address;
+    }
+
+    public ServerState getServerState() {
+        return state;
     }
 }
