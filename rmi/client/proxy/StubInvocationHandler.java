@@ -1,6 +1,7 @@
 package rmi.client.proxy;
 
 import rmi.RMIException;
+import rmi.RMIPacket;
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -51,14 +52,19 @@ public class StubInvocationHandler implements InvocationHandler {
                 out.flush();
                 try (ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
 
-                    // TODO method和args可以被序列化么？
-                    // TODO writeObject()方法对参数有什么特殊的要求吗？
-                    // write out method and args to server
-                    out.writeObject(method);
-                    out.writeObject(args);
+                    RMIPacket packet = new RMIPacket();
+                    packet.setMethodName(method.getName());
+                    packet.setParamTypes(method.getParameterTypes());
+                    packet.setArgs(args);
+
+                    // transport the packet to server
+                    out.writeObject(packet);
 
                     // read return value from server
                     retVal = in.readObject();
+                    if (retVal instanceof Throwable) {
+                        throw (Throwable) retVal;
+                    }
                 }
             } catch (SocketException e) {
                 throw new RMIException(e.getMessage(), e);

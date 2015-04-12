@@ -1,10 +1,19 @@
 package rmi.server.task;
 
 import rmi.RMIException;
-import rmi.Skeleton;
+import rmi.RMIPacket;
+import rmi.Utils;
+import rmi.server.EventHandler;
+import rmi.server.ServerEvent;
 import rmi.server.callback.Callback;
+import rmi.server.callback.MethodInvocationCallback;
 
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.Socket;
+import java.net.SocketException;
 import java.util.concurrent.Callable;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -16,49 +25,77 @@ import java.util.logging.Logger;
  *
  */
 public final class CallbackTask<T> implements Runnable {
-    private static final Logger LOGGER = Logger.getLogger("CallbackTask");
+    private static final Logger LOGGER = Logger.getLogger(CallbackTask.class.getName());
 
     /**
      * Actual task to run
-     */
-    protected final Callable task;
+    private Callable task;
 
     /**
      * Callback object
+    private Callback callback;
      */
-    protected final Callback callback;
+
+    private T serviceImpl;
 
     /**
-     * The associcated skeleton instance, need to be informed if RMI request fail to serve
+     * Accepted client socket
      */
-    private Skeleton<T> skeleton;
+    private Socket sock;
 
+    private EventHandler eventHandler;
 
-    public CallbackTask(Skeleton<T> s, Callable task, Callback callback) {
-        this.skeleton = s;
-        this.task = task;
-        this.callback = callback;
+    public CallbackTask(EventHandler eventHandler, T target, Socket sock) {
+        if (null == eventHandler || null == target || null == sock) {
+            throw new IllegalArgumentException("args cannot be null");
+        }
+        this.eventHandler = eventHandler;
+        this.serviceImpl = target;
+        this.sock = sock;
     }
 
     @Override
     public void run() {
-        try {
-            Object retVal = task.call();
-            callback.onSuccess(retVal);
+        try (ObjectOutputStream out = new ObjectOutputStream(sock.getOutputStream())) {
+            out.flush();
+
+            RMIPacket packet;
+            try (ObjectInputStream in = new ObjectInputStream(sock.getInputStream())) {
+                packet = (RMIPacket) in.readObject();
+
+                if (null != packet) {
+                    Method method = serviceImpl.getClass()
+                            .getDeclaredMethod(packet.getMethodName(), packet.getParamTypes());
+
+                    Callable<Object> callable = new MethodInvocationTask(serviceImpl, method, packet.getArgs());
+                    Callback callback = new MethodInvocationCallback(eventHandler, out);
+                    try {
+                        Object retVal = callable.call();
+                        callback.onSuccess(retVal);
+                    } catch (InvocationTargetException e) {
+                        callback.onFail(e.getCause());
+                    }
+                } else {
+                    eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException("Received empty packet"));
+                }
+
+            } catch (SocketException e) {
+                LOGGER.log(Level.WARNING, "Socket exception occurred during create ObjectInputStream: ", e);
+                eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
+
+            } catch (ClassNotFoundException e) {
+                LOGGER.log(Level.SEVERE, "RMIPacket.class not found exception: ", e);
+                eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
+            }
+
+
         } catch (Exception e) {
-            callback.onFail(e);
-            stateChanged(new RMIException("CallbackTask fail", e));
+            LOGGER.log(Level.SEVERE, "[CallbackTask] exception occurred:", e);
+            eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
+        } finally {
+            Utils.closeResouce(sock);
         }
 
     }
 
-    public void stateChanged(Object... args) {
-        try {
-            Method callback = Skeleton.class.getDeclaredMethod("service_error", RMIException.class);
-            callback.setAccessible(true);
-            callback.invoke(this.skeleton, args);
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "stateChanged(): Exception occured!", e);
-        }
-    }
 }

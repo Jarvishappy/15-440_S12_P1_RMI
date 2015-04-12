@@ -4,20 +4,13 @@ import rmi.config.Config;
 import rmi.server.EventHandler;
 import rmi.server.ServerEvent;
 import rmi.server.ServerState;
-import rmi.server.callback.Callback;
-import rmi.server.callback.MethodInvocationCallback;
-import rmi.server.task.MethodInvocationTask;
+import rmi.server.task.CallbackTask;
 
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.Arrays;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -29,7 +22,7 @@ import java.util.logging.Logger;
  * only visible to Skeleton
  */
 class TCPServer<T> extends Thread {
-    private static final Logger LOGGER = Logger.getLogger("TCPServer");
+    private static final Logger LOGGER = Logger.getLogger(TCPServer.class.getName());
 
     private static final int ANY_PORT = 0;
 
@@ -167,61 +160,11 @@ class TCPServer<T> extends Thread {
         try {
             while (!isStopped()) {
                 LOGGER.info("[TCPServer] blocking on accept()...");
-                //ObjectInputStream in = null;
-                try (Socket clientSocket = serverSocket.accept();
-                        ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream())
-                ) {
-                    LOGGER.info("[TCPServer] accepted a new connection...");
-                    // flush it before crate OIS
-                    out.flush();
+                try {
+                    // clientSocket的状态应该由Worker thread来维护，而不是Listening thread
 
-                    // 创建OIS的时候会阻塞在socket.read()方法上，因为OIS的constructor里需要先读取packet的header，
-                    // 因此如果peer socket在这时关掉了，那么这里就会抛异常了，也就是无法读取到客户端传来的方法和参数了，
-                    // 那么这时这个连接是没有意义的了，可以抛弃掉
-                    Method method;
-                    Object[] args;
-
-                    try (ObjectInputStream in = new ObjectInputStream(clientSocket.getInputStream())) {
-                        // read methond name and arguments from inputStream
-                        method = (Method) in.readObject();
-                        args = (Object[]) in.readObject();
-
-                    } catch (SocketException e) {
-                        LOGGER.log(Level.WARNING, "Socket exception occurred during create ObjectInputStream: ", e);
-                        continue;
-                    }
-
-
-                    LOGGER.info(String.format("Got a RMI connection:\nmethod=>%s\nargs=>%s", method.getName(),
-                            Arrays.toString(args)));
-
-                    // submit a task to workerThreads
-                    final Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
-                    final Callback taskCallback = new MethodInvocationCallback(out);
-                    Runnable task = new Runnable() {
-                        /**
-                         * Actual task to run
-                         */
-                        protected final Callable task = methodInvocation;
-
-                        /**
-                         * Callback object
-                         */
-                        protected final Callback callback = taskCallback;
-
-                        @Override
-                        public void run() {
-                            try {
-                                Object retVal = task.call();
-                                callback.onSuccess(retVal);
-                            } catch (Exception e) {
-                                callback.onFail(e);
-                                eventHandler.handleEvent(ServerEvent.SERVICE_ERROR,
-                                        new RMIException(e.getMessage(), e));
-                            }
-                        }
-                    };
-
+                    Socket clientSocket = serverSocket.accept();
+                    CallbackTask<T> task = new CallbackTask<>(eventHandler, serviceImpl, clientSocket);
                     workerThreads.submit(task);
                 } catch (SocketException e) {
                     LOGGER.log(Level.WARNING, "Socket exception while listening: ", e);
