@@ -3,6 +3,15 @@
 
 
 2015-4-12
-TODO method和args可以被序列化么？
-TODO writeObject()方法对参数有什么特殊的要求吗？
+ObjectOutputStream.writeObject()方法对参数有什么特殊的要求吗？
+答：参数必须是可序列化的，参考HSF，HSF也要求了参数是可序列化的，由此可见
+这个约束是Java的规范。想想都知道了，要把一个对象在网络中传输，那么就必须
+要把这个对象序列化成字节流。
+
+
+skeleton中的callback方法现在是由事件发生的线程来调用的，这样子的坏处就是
+这些事件其实是有发生的先后顺序的，但是callbacks会被不同的线程调用，即callback
+的调用顺序与事件的发生顺序并不是一致的，所以更好的做法是使用一个Daemon的线程
+专门负责调用事件的callback，由一个单线程来调用所有的callback，这样保证了有序性
+
 
