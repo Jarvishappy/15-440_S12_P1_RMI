@@ -213,8 +213,14 @@ public class Skeleton<T> {
      * restarted.
      */
     public synchronized void stop() {
+        // TODO
+        // stopped()调用的前提是server完全关闭：
+        // 1. terminate listening thread
+        // 2. all worker thread finished
+        // 3. server may then restart
+
         if (null != tcpServer) {
-            tcpServer.stopListenning();
+            tcpServer.stopServer();
         }
     }
 

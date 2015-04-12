@@ -3,7 +3,7 @@ package rmi.server;
 /**
  * Server state transition:
  *
- * CREATED --> RUNNING[ LISTENING, STOPPED ] --> SHUTDOWN
+ * CREATED --> LISTENING --> STOPPED
  *
  */
 public enum ServerState {
@@ -11,13 +11,7 @@ public enum ServerState {
 
     /** Running **/
     LISTENING(2),
-    STOPPED(3), // stop listening
-
-    SHUTDOWN(4),
-
-    /** Events **/
-    LISTEN_ERROR(5),
-    SERVICE_ERROR(6);
+    STOPPED(3);
 
     private ServerState(int v) {
         this.value = v;

@@ -3,7 +3,6 @@ package rmi.server.task;
 import rmi.RMIException;
 import rmi.Skeleton;
 import rmi.server.callback.Callback;
-import rmi.server.event.Subject;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
@@ -16,7 +15,7 @@ import java.util.logging.Logger;
  * Future instance returned by ExecutorService.submit()
  *
  */
-public final class CallbackTask<T> implements Runnable, Subject {
+public final class CallbackTask<T> implements Runnable {
     private static final Logger LOGGER = Logger.getLogger("CallbackTask");
 
     /**
@@ -53,7 +52,6 @@ public final class CallbackTask<T> implements Runnable, Subject {
 
     }
 
-    @Override
     public void stateChanged(Object... args) {
         try {
             Method callback = Skeleton.class.getDeclaredMethod("service_error", RMIException.class);

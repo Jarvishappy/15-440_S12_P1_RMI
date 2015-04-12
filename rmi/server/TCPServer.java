@@ -5,7 +5,6 @@ import rmi.Skeleton;
 import rmi.config.Config;
 import rmi.server.callback.Callback;
 import rmi.server.callback.MethodInvocationCallback;
-import rmi.server.task.CallbackTask;
 import rmi.server.task.MethodInvocationTask;
 
 import java.io.IOException;
@@ -17,12 +16,10 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -52,15 +49,8 @@ public class TCPServer<T> extends Thread {
     private ExecutorService workerThreads;
     private InetSocketAddress address;  // Server socket address
 
-    /**
-     * 存放Skelton类中的事件回调函数
-     */
-    private Map<ServerState, Method> callbacks;
 
-    /**
-     * If the server allow to listen for incoming connection
-     */
-    private Semaphore permission = new Semaphore(0);
+    private EventHandler eventHandler;
 
     public static final Throwable DUMMY_THROWABLE = new Throwable("dumb");
 
@@ -105,47 +95,33 @@ public class TCPServer<T> extends Thread {
     private void initServer() throws IOException {
         // TODO 使用ThreadPoolExecutor来做线程池
         workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
+
         state = ServerState.CREATED;
-
-        try {
-            addCallback(ServerState.STOPPED, Skeleton.class.getDeclaredMethod("stopped", Throwable.class));
-            addCallback(ServerState.LISTEN_ERROR,
-                    Skeleton.class.getDeclaredMethod("listen_error", Exception.class));
-            addCallback(ServerState.SERVICE_ERROR, Skeleton.class.getDeclaredMethod("service_error",
-                    RMIException.class));
-        } catch (NoSuchMethodException e) {
-            LOGGER.log(Level.WARNING, "[TCPServer] add callbacks FAIL!", e);
-        }
-
-    }
-
-    /**
-     * Add callback to specified server state
-     *
-     * @param serverState the server state
-     * @param callback    corresponding callback for the state
-     */
-    private void addCallback(ServerState serverState, Method callback) {
-        if (null == callbacks) {
-            callbacks = new HashMap<ServerState, Method>();
-        }
-        callbacks.put(serverState, callback);
+        eventHandler = new EventHandler(this.skeleton);
     }
 
 
     @Override
     public void run() {
-        while (!isShutDown()) {
-            try {
-                permission.acquire();
-                LOGGER.info("[TCPServer] start listenning");
-                listeningLoop();
-                LOGGER.info("[TCPServer] complete listenning");
-            } catch (InterruptedException e) {
-                LOGGER.info("[TCPServer] being interrupted!");
-            }
 
+        listeningLoop();
+        // 退出循环后，尝试关闭线程池
+        // 等线程池完全关闭了再调用stopped()函数
+
+        boolean terminated = false;
+        try {
+            terminated = workerThreads.awaitTermination(500, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
+
+        if (terminated) {
+            LOGGER.info("[TCPServer] server terminated succesfully");
+        } else {
+            LOGGER.warning("[TCPServer] server terminated fail");
+        }
+
+        eventHandler.handleEvent(ServerEvent.STOPPED, DUMMY_THROWABLE);
 
     }
 
@@ -157,10 +133,7 @@ public class TCPServer<T> extends Thread {
                 break;
 
             case LISTENING:
-            case LISTEN_ERROR:
             case STOPPED:
-            case SERVICE_ERROR:
-            case SHUTDOWN:
                 throw new IllegalStateException(
                         "TCPServer start fail, may has been started! state:" + this.state);
 
@@ -169,7 +142,7 @@ public class TCPServer<T> extends Thread {
         }
 
         // permit server to start, increase the semaphore
-        permission.release();
+        // permission.release();
         // start server thread
         super.start();
     }
@@ -178,31 +151,32 @@ public class TCPServer<T> extends Thread {
      * Pauses listening for incoming connection, if server is listening.
      * Causes listening thread returns from listeningLoop(), blocking on permission.acquire().
      */
-    public void stopListenning() {
+    public void stopServer() {
         if (this.state == ServerState.LISTENING) {
-            stateTransition(ServerState.LISTENING, ServerState.STOPPED, DUMMY_THROWABLE);
+            // 不能马上调用callback，因为server还没完全关闭
+            stateTransition(ServerState.LISTENING, ServerState.STOPPED);
         }
     }
 
     /**
      * Resumes listening
      */
-    public void resumeServer() {
+/*    public void resumeServer() {
         stateTransition(ServerState.STOPPED, ServerState.LISTENING);
         // increase permission to allow listening thread to wake up
-        permission.release();
-    }
+        // permission.release();
+    }*/
 
 
     /**
      * Shut down the TCP server, shut down all inner thread pool.
      */
-    public void shutdown() {
+/*    public void shutdown() {
         if (this.state == ServerState.CREATED || this.state == ServerState.SHUTDOWN) {
             throw new IllegalStateException("Server isn't running!");
         }
         this.state = ServerState.SHUTDOWN;
-    }
+    }*/
 
 
     /**
@@ -210,24 +184,21 @@ public class TCPServer<T> extends Thread {
      * Main logic for the server.
      */
     private void listeningLoop() {
-        Socket clientSocket = null;
-        ObjectOutputStream out = null;
-        ObjectInputStream in = null;
-        try {
+        try (ServerSocket serverSocket = this.address != null ?
+                new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress()) :
+                new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION)) {
 
-            ServerSocket serverSocket = this.address != null ?
-                    new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress()) :
-                    new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
-
-            while (!isShutDown() && !isStopped()) {
-                try {
-                    LOGGER.info("[TCPServer] blocking on accept()...");
-                    clientSocket = serverSocket.accept();
+            while (!isStopped()) {
+                LOGGER.info("[TCPServer] blocking on accept()...");
+                ObjectInputStream in = null;
+                try (Socket clientSocket = serverSocket.accept();
+                        ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream())
+                ) {
                     LOGGER.info("[TCPServer] accepted a new connection...");
-                    out = new ObjectOutputStream(clientSocket.getOutputStream());
                     // flush it before crate OIS
                     out.flush();
                     in = new ObjectInputStream(clientSocket.getInputStream());
+
                     // read methond name and arguments from inputStream
                     Method method = (Method) in.readObject();
                     Object[] args = (Object[]) in.readObject();
@@ -236,24 +207,56 @@ public class TCPServer<T> extends Thread {
                             Arrays.toString(args)));
 
                     // submit a task to workerThreads
-                    Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
-                    Callback callback = new MethodInvocationCallback(out);
-                    CallbackTask<T> task = new CallbackTask<T>(this.skeleton, methodInvocation, callback);
+                    final Callable<Object> methodInvocation = new MethodInvocationTask(this.serviceImpl, method, args);
+                    final Callback taskCallback = new MethodInvocationCallback(out);
+                    Runnable task = new Runnable() {
+                        /**
+                         * Actual task to run
+                         */
+                        protected final Callable task = methodInvocation;
+
+                        /**
+                         * Callback object
+                         */
+                        protected final Callback callback = taskCallback;
+
+                        @Override
+                        public void run() {
+                            try {
+                                Object retVal = task.call();
+                                callback.onSuccess(retVal);
+                            } catch (Exception e) {
+                                callback.onFail(e);
+                                eventHandler.handleEvent(ServerEvent.SERVICE_ERROR,
+                                        new RMIException(e.getMessage(), e));
+                            }
+                        }
+                    };
 
                     workerThreads.submit(task);
                 } catch (SocketException e) {
-                    LOGGER.log(Level.WARNING, "Socket exception", e);
-
+                    LOGGER.log(Level.WARNING, "Socket exception occured: ", e);
+                } catch (IOException e) {
+                    LOGGER.log(Level.WARNING, "IO exception occured: ", e);
+                } finally {
+                    try {
+                        if (in != null) {
+                            in.close();
+                        }
+                    } catch (IOException e) {
+                        LOGGER.log(Level.WARNING, "close object input stream error!", e);
+                    }
                 }
             }
 
             LOGGER.info("[TCPServer] exit the listening loop");
 
+            // 除IO异常之外的，认为发生了LISTEN_ERROR
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Server exception while listenning!", e);
-            stateTransition(ServerState.LISTENING, ServerState.LISTEN_ERROR, e);
-            stateTransition(ServerState.LISTEN_ERROR, ServerState.STOPPED, e);
-        } finally {
+            onEventOccur(ServerEvent.LISTEN_ERROR, e);
+        }
+/*        finally {
             try {
                 if (null != clientSocket) {
                     clientSocket.close();
@@ -267,7 +270,11 @@ public class TCPServer<T> extends Thread {
             } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "close socket or stream error!", e);
             }
-        }
+        }*/
+    }
+
+    private void onEventOccur(ServerEvent event, Object... args) {
+        eventHandler.handleEvent(event, args);
     }
 
 
@@ -275,9 +282,8 @@ public class TCPServer<T> extends Thread {
      * Change TCPServer state and invoke correspoding callbacks
      * @param before
      * @param after
-     * @param callbackArgs arguments for callbacks in Skeleton
      */
-    private void stateTransition(ServerState before, ServerState after, Object... callbackArgs) {
+    private void stateTransition(ServerState before, ServerState after) {
         if (this.state != before) {
             throw new IllegalStateException(String.format(
                     "Current state: [%s]\nServer state transition [%s]->[%s] fail! ",
@@ -285,28 +291,8 @@ public class TCPServer<T> extends Thread {
         }
 
         this.state = after;
-        invokeCallback(callbackArgs);
     }
 
-    /**
-     * Only called by stateTransition()
-     */
-    private void invokeCallback(Object... args) {
-        Method callback = callbacks.get(this.state);
-        if (null != callback) {
-            callback.setAccessible(true);
-            try {
-                callback.invoke(this.skeleton, args);
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Exception occrued while calling callback", e);
-            }
-        }
-
-    }
-
-    private boolean isShutDown() {
-        return this.state == ServerState.SHUTDOWN;
-    }
 
     private boolean isStopped() {
         return this.state == ServerState.STOPPED;
