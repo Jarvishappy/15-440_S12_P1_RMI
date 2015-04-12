@@ -1,8 +1,9 @@
-package rmi.server;
+package rmi;
 
-import rmi.RMIException;
-import rmi.Skeleton;
 import rmi.config.Config;
+import rmi.server.EventHandler;
+import rmi.server.ServerEvent;
+import rmi.server.ServerState;
 import rmi.server.callback.Callback;
 import rmi.server.callback.MethodInvocationCallback;
 import rmi.server.task.MethodInvocationTask;
@@ -25,8 +26,9 @@ import java.util.logging.Logger;
 
 /**
  * An TCP multithreaded server implementation
+ * only visible to Skeleton
  */
-public class TCPServer<T> extends Thread {
+class TCPServer<T> extends Thread {
     private static final Logger LOGGER = Logger.getLogger("TCPServer");
 
     private static final int ANY_PORT = 0;
