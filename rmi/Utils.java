@@ -1,9 +1,13 @@
 package rmi;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * 各种工具类函数
@@ -12,6 +16,7 @@ import java.util.Set;
  * @date 2015-04-12 2:42 PM
  */
 public class Utils {
+    private static final Logger LOGGER = Logger.getLogger("Utils");
 
     /**
      * @throws Error                If <code>c</code> does not represent a remote interface -
@@ -33,4 +38,13 @@ public class Utils {
         }
     }
 
+    public static void closeResouce(Closeable stream) {
+        try {
+            if (null != stream) {
+                stream.close();
+            }
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Close stream fail:", e);
+        }
+    }
 }

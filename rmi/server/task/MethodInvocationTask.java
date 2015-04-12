@@ -1,5 +1,6 @@
 package rmi.server.task;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
 
@@ -29,7 +30,7 @@ public class MethodInvocationTask implements Callable<Object> {
     }
 
     @Override
-    public Object call() throws Exception {
+    public Object call() throws InvocationTargetException, IllegalAccessException {
         return method.invoke(instance, args);
     }
 }

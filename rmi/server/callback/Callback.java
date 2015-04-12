@@ -15,5 +15,5 @@ public interface Callback {
      * 远程调用失败，将异常写回客户端连接的socket
      * @param e
      */
-    public void onFail(Exception e);
+    public void onFail(Throwable e);
 }
