@@ -1,2 +1,8 @@
 2015-4-11
 11:26 Passed SkeletonTest
+
+
+2015-4-12
+TODO method和args可以被序列化么？
+TODO writeObject()方法对参数有什么特殊的要求吗？
+

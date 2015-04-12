@@ -1,5 +1,7 @@
 package rmi.client.proxy;
 
+import rmi.RMIException;
+
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.InvocationHandler;
@@ -7,6 +9,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.Arrays;
 
 /**
@@ -40,19 +43,26 @@ public class StubInvocationHandler implements InvocationHandler {
         }
 
         if (null == retVal) {
-            Socket socket = new Socket(serverSockAddr.getAddress(), serverSockAddr.getPort());
-            // not need to connect like in C
-            ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-            // flush before
-            out.flush();
-            ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
+            try (Socket socket = new Socket(serverSockAddr.getAddress(), serverSockAddr.getPort());
+                    // not need to call connect() like in C
+                    ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())
+            ) {
+                // flush before
+                out.flush();
+                try (ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
 
-            // write out method and args to server
-            out.writeObject(method);
-            out.writeObject(args);
+                    // TODO method和args可以被序列化么？
+                    // TODO writeObject()方法对参数有什么特殊的要求吗？
+                    // write out method and args to server
+                    out.writeObject(method);
+                    out.writeObject(args);
 
-            // read return value from server
-            retVal = in.readObject();
+                    // read return value from server
+                    retVal = in.readObject();
+                }
+            } catch (SocketException e) {
+                throw new RMIException(e.getMessage(), e);
+            }
         }
 
         return retVal;
@@ -112,8 +122,9 @@ public class StubInvocationHandler implements InvocationHandler {
         return serverSockAddr;
     }
 
+    /*
     @Override
     public boolean equals(Object obj) {
         return super.equals(obj);
-    }
+    }*/
 }

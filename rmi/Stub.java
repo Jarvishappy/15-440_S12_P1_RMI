@@ -56,7 +56,16 @@ public abstract class Stub {
      */
     public static <T> T create(Class<T> c, Skeleton<T> skeleton)
             throws UnknownHostException {
-        //throw new UnsupportedOperationException("not implemented");
+        Utils.verifyInterface(c);
+
+        if (skeleton.getServerSockAddress() == null) {
+            throw new IllegalStateException("skeleton has not been assigned an address");
+        }
+        if (!skeleton.isStart()) {
+            throw new IllegalStateException("skeleton has not yet been started");
+        }
+
+
         InvocationHandler handler = new StubInvocationHandler((InetSocketAddress) skeleton.getServerSockAddress());
         @SuppressWarnings("unchecked")
         T proxyInstance = (T) Proxy.newProxyInstance(c.getClassLoader(), new Class<?>[] { c }, handler);
@@ -82,8 +91,6 @@ public abstract class Stub {
      * this hostname to this method.
      *
      * @param c        A <code>Class</code> object representing the interface
-     *                 implemented by the remote object.
-     * @param skeleton The skeleton whose port is to be used.
      * @param hostname The hostname with which the stub will be created.
      * @return The stub created.
      * @throws IllegalStateException If the skeleton has not been assigned a
@@ -96,7 +103,20 @@ public abstract class Stub {
      */
     public static <T> T create(Class<T> c, Skeleton<T> skeleton,
             String hostname) {
-        throw new UnsupportedOperationException("not implemented");
+        if (null == skeleton || null == c || null == hostname) {
+            throw new NullPointerException("params cannot be null");
+        }
+        if (null == skeleton.getServerSockAddress()) {
+            throw new IllegalStateException("skeleton has not yet been assigned an address");
+        }
+
+        Utils.verifyInterface(c);
+        InetSocketAddress address = new InetSocketAddress(hostname, skeleton.getServerSockAddress().getPort());
+
+        @SuppressWarnings("unchecked")
+        T instance = (T) Proxy.newProxyInstance(c.getClassLoader(), new Class<?>[] { c },
+                new StubInvocationHandler(address));
+        return instance;
     }
 
     /**
@@ -118,6 +138,12 @@ public abstract class Stub {
      *                              this interface cannot be dynamically created.
      */
     public static <T> T create(Class<T> c, InetSocketAddress address) {
+        if (null == c || null == address) {
+            throw new NullPointerException("params cannot be null");
+        }
+
+        Utils.verifyInterface(c);
+
         InvocationHandler handler = new StubInvocationHandler(address);
         /**
          * Create a proxy instance for Class c, with a method invocation handler.
