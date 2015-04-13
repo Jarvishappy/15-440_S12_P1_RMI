@@ -24,7 +24,7 @@ import java.util.logging.Logger;
 class TCPServer<T> extends Thread {
     private static final Logger LOGGER = Logger.getLogger(TCPServer.class.getName());
 
-    private static final int ANY_PORT = 0;
+    private static final int DEFAULT_PORT = 3182;
 
     /**
      * The remote interface type
@@ -83,7 +83,7 @@ class TCPServer<T> extends Thread {
 
         // assign a default address
         if (null == getAddress()) {
-            address = new InetSocketAddress(ANY_PORT);
+            address = new InetSocketAddress(DEFAULT_PORT);
         }
         // TODO 使用ThreadPoolExecutor来做线程池
         workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
@@ -167,7 +167,7 @@ class TCPServer<T> extends Thread {
                     CallbackTask<T> task = new CallbackTask<>(eventHandler, serviceImpl, clientSocket);
                     workerThreads.submit(task);
                 } catch (SocketException e) {
-                    LOGGER.log(Level.WARNING, "Socket exception while listening: ", e);
+                    //LOGGER.log(Level.WARNING, "Socket exception while listening: ", e);
                 } catch (IOException e) {
                     LOGGER.log(Level.WARNING, "IO exception while listening: ", e);
                 }
@@ -178,14 +178,9 @@ class TCPServer<T> extends Thread {
             // 除IO异常之外的，认为发生了LISTEN_ERROR
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Server exception while listenning:", e);
-            onEventOccur(ServerEvent.LISTEN_ERROR, e);
+            eventHandler.handleEvent(ServerEvent.LISTEN_ERROR, e);
         }
     }
-
-    private void onEventOccur(ServerEvent event, Object... args) {
-        eventHandler.handleEvent(event, args);
-    }
-
 
     /**
      * Change TCPServer state and invoke correspoding callbacks

@@ -66,7 +66,7 @@ public abstract class Stub {
         }
 
 
-        InvocationHandler handler = new StubInvocationHandler((InetSocketAddress) skeleton.getServerSockAddress());
+        InvocationHandler handler = new StubInvocationHandler(skeleton.getServerSockAddress());
         @SuppressWarnings("unchecked")
         T proxyInstance = (T) Proxy.newProxyInstance(c.getClassLoader(), new Class<?>[] { c }, handler);
         return proxyInstance;
