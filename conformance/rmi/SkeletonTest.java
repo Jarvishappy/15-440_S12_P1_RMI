@@ -3,6 +3,7 @@ package conformance.rmi;
 import test.*;
 import rmi.*;
 import java.net.*;
+import java.util.concurrent.TimeUnit;
 
 /** Performs basic tests on the public interface of {@link rmi.Skeleton}.
 
@@ -62,6 +63,7 @@ public class SkeletonTest extends Test
      */
     private void ensureSkeletonRuns() throws TestFailed
     {
+        // new了ServerSocket之后client就可以connect了，除非在start的时候才new ServerSocket
         if(probe())
             throw new TestFailed("skeleton accepts connections before start");
 
@@ -74,10 +76,15 @@ public class SkeletonTest extends Test
             throw new TestFailed("unable to start skeleton", e);
         }
 
+        // 等一下skeleton的listening thread被调度
+        sleep(1);
+
         if(!probe())
             throw new TestFailed("skeleton refuses connections after start");
 
+        // 难道在stop之后要把那个server_socket关掉？答：是的
         skeleton.stop();
+        System.out.println(">>>>>>>>> [SkeletonTest] call skeleton.stop()");
 
         synchronized(this)
         {
@@ -93,6 +100,15 @@ public class SkeletonTest extends Test
 
         if(probe())
             throw new TestFailed("skeleton accepts connections after stop");
+    }
+
+    private void sleep(long secs) {
+        try {
+            TimeUnit.SECONDS.sleep(secs);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
     }
 
     /** Wakes <code>ensureSkeletonRuns</code>. */
@@ -321,6 +337,7 @@ public class SkeletonTest extends Test
         @Override
         protected void stopped(Throwable cause)
         {
+            System.out.println("SkeletonTest: stopped() called");
             wake();
         }
 
