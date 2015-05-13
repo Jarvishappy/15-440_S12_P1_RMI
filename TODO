@@ -14,4 +14,6 @@ skeleton中的callback方法现在是由事件发生的线程来调用的，这�
 的调用顺序与事件的发生顺序并不是一致的，所以更好的做法是使用一个Daemon的线程
 专门负责调用事件的callback，由一个单线程来调用所有的callback，这样保证了有序性
 
+2015-5-13
+把这个项目转成Maven项目，并且用commons-logging来打日志
 
