@@ -4,14 +4,14 @@ import com.strikew.rmi.RMIException;
 import com.strikew.rmi.Utils;
 import com.strikew.rmi.server.EventHandler;
 import com.strikew.rmi.server.ServerEvent;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.io.ObjectOutputStream;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class MethodInvocationCallback implements Callback {
-    private static final Logger LOGGER = Logger.getLogger("MethodInvocationCallback");
+    private static final Log LOGGER = LogFactory.getLog(MethodInvocationCallback.class);
 
     private EventHandler eventHandler;
 
@@ -33,7 +33,7 @@ public class MethodInvocationCallback implements Callback {
         try {
             out.writeObject(retVal);
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "onSuccess(): write return value FAIL!", e);
+            LOGGER.error("onSuccess(): write return value FAIL!", e);
             eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
         } finally {
             Utils.closeResouce(out);
@@ -47,7 +47,7 @@ public class MethodInvocationCallback implements Callback {
         try {
             out.writeObject(e);
         } catch (IOException ex) {
-            LOGGER.log(Level.SEVERE, "onFail(): write exception to client FAIL!", ex);
+            LOGGER.error("onFail(): write exception to client FAIL!", ex);
         } finally {
             Utils.closeResouce(out);
         }

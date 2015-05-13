@@ -2,19 +2,19 @@ package com.strikew.rmi.server;
 
 import com.strikew.rmi.RMIException;
 import com.strikew.rmi.Skeleton;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * @author siyuan
  * @date 2015-04-11 10:07 AM
  */
 public class EventHandler {
-    private static final Logger LOGGER = Logger.getLogger("EventHandler");
+    private static final Log LOGGER = LogFactory.getLog(EventHandler.class);
 
     private Object target;
 
@@ -32,7 +32,7 @@ public class EventHandler {
             callbacks.put(ServerEvent.SERVICE_ERROR,
                     Skeleton.class.getDeclaredMethod("service_error", RMIException.class));
         } catch (NoSuchMethodException e) {
-            LOGGER.log(Level.WARNING, "[TCPServer] add callbacks FAIL!", e);
+            LOGGER.warn("[TCPServer] add callbacks FAIL!", e);
         }
     }
 
@@ -47,7 +47,7 @@ public class EventHandler {
             try {
                 callback.invoke(target, args);
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Exception occrued while calling callback", e);
+                LOGGER.error("Exception occrued while calling callback", e);
             }
         }
 

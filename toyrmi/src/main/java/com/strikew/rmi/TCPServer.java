@@ -5,6 +5,8 @@ import com.strikew.rmi.server.EventHandler;
 import com.strikew.rmi.server.ServerEvent;
 import com.strikew.rmi.server.ServerState;
 import com.strikew.rmi.server.task.CallbackTask;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -14,15 +16,13 @@ import java.net.SocketException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * An TCP multithreaded server implementation
  * only visible to Skeleton
  */
 class TCPServer<T> extends Thread {
-    private static final Logger LOGGER = Logger.getLogger(TCPServer.class.getName());
+    private static final Log LOGGER = LogFactory.getLog(TCPServer.class);
 
     private static final int DEFAULT_PORT = 3182;
 
@@ -110,9 +110,9 @@ class TCPServer<T> extends Thread {
         }
 
         if (terminated) {
-            LOGGER.info("[TCPServer] server terminated succesfully");
+            LOGGER.info("server terminated succesfully");
         } else {
-            LOGGER.warning("[TCPServer] server terminated fail");
+            LOGGER.warn("server terminated fail");
         }
 
         eventHandler.handleEvent(ServerEvent.STOPPED, DUMMY_THROWABLE);
@@ -159,7 +159,7 @@ class TCPServer<T> extends Thread {
     private void listeningLoop() {
         try {
             while (!isStopped()) {
-                LOGGER.info("[TCPServer] blocking on accept()...");
+                LOGGER.info("blocking on accept()...");
                 try {
                     // clientSocket的状态应该由Worker thread来维护，而不是Listening thread
 
@@ -169,15 +169,15 @@ class TCPServer<T> extends Thread {
                 } catch (SocketException e) {
                     //LOGGER.log(Level.WARNING, "Socket exception while listening: ", e);
                 } catch (IOException e) {
-                    LOGGER.log(Level.WARNING, "IO exception while listening: ", e);
+                    LOGGER.warn("IO exception while listening: ", e);
                 }
             }
 
-            LOGGER.info("[TCPServer] exit the listening loop");
+            LOGGER.info("exit the listening loop");
 
             // 除IO异常之外的，认为发生了LISTEN_ERROR
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Server exception while listenning:", e);
+            LOGGER.error("Server exception while listenning:", e);
             eventHandler.handleEvent(ServerEvent.LISTEN_ERROR, e);
         }
     }

@@ -7,6 +7,8 @@ import com.strikew.rmi.server.EventHandler;
 import com.strikew.rmi.server.ServerEvent;
 import com.strikew.rmi.server.callback.Callback;
 import com.strikew.rmi.server.callback.MethodInvocationCallback;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -15,8 +17,6 @@ import java.lang.reflect.Method;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.concurrent.Callable;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * A task with a callback, in order to get
@@ -25,7 +25,7 @@ import java.util.logging.Logger;
  *
  */
 public final class CallbackTask<T> implements Runnable {
-    private static final Logger LOGGER = Logger.getLogger(CallbackTask.class.getName());
+    private static final Log LOGGER = LogFactory.getLog(CallbackTask.class);
 
     /**
      * Actual task to run
@@ -80,17 +80,17 @@ public final class CallbackTask<T> implements Runnable {
                 }
 
             } catch (SocketException e) {
-                LOGGER.log(Level.WARNING, "Socket exception occurred during create ObjectInputStream: ", e);
+                LOGGER.warn("Socket exception occurred during create ObjectInputStream: ", e);
                 eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
 
             } catch (ClassNotFoundException e) {
-                LOGGER.log(Level.SEVERE, "RMIPacket.class not found exception: ", e);
+                LOGGER.error("RMIPacket.class not found exception: ", e);
                 eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
             }
 
 
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "[CallbackTask] exception occurred:", e);
+            LOGGER.error("[CallbackTask] exception occurred:", e);
             eventHandler.handleEvent(ServerEvent.SERVICE_ERROR, new RMIException(e.getMessage(), e));
         } finally {
             Utils.closeResouce(sock);

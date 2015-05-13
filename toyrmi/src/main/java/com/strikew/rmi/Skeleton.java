@@ -1,11 +1,11 @@
 package com.strikew.rmi;
 
 import com.strikew.rmi.server.ServerState;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * RMI skeleton
@@ -31,7 +31,7 @@ import java.util.logging.Logger;
  * or <code>service_error</code>.
  */
 public class Skeleton<T> {
-    private static final Logger LOGGER = Logger.getLogger("Skeleton");
+    private static final Log LOGGER = LogFactory.getLog(Skeleton.class);
 
     private TCPServer<T> tcpServer;
 
@@ -112,10 +112,10 @@ public class Skeleton<T> {
      */
     protected void stopped(Throwable cause) {
         if (cause != TCPServer.DUMMY_THROWABLE) {
-            LOGGER.log(Level.SEVERE, cause.getMessage(), cause);
+            LOGGER.error(cause.getMessage(), cause);
         }
         // TODO: callback when listening thread EXIT
-        LOGGER.log(Level.INFO, "callback for listening thread exits");
+        LOGGER.info("callback for listening thread exits");
     }
 
     /**
