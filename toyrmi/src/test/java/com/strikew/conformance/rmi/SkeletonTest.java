@@ -1,9 +1,12 @@
 package com.strikew.conformance.rmi;
 
-import com.strikew.test.*;
-import com.strikew.rmi.*;
-import java.net.*;
-import java.util.concurrent.TimeUnit;
+import com.strikew.rmi.RMIException;
+import com.strikew.rmi.Skeleton;
+import com.strikew.test.Test;
+import com.strikew.test.TestFailed;
+
+import java.net.InetSocketAddress;
+import java.net.Socket;
 
 /** Performs basic tests on the public interface of {@link com.strikew.rmi.Skeleton}.
 
@@ -76,9 +79,6 @@ public class SkeletonTest extends Test
             throw new TestFailed("unable to start skeleton", e);
         }
 
-        // 等一下skeleton的listening thread被调度
-        sleep(1);
-
         if(!probe())
             throw new TestFailed("skeleton refuses connections after start");
 
@@ -100,15 +100,6 @@ public class SkeletonTest extends Test
 
         if(probe())
             throw new TestFailed("skeleton accepts connections after stop");
-    }
-
-    private void sleep(long secs) {
-        try {
-            TimeUnit.SECONDS.sleep(secs);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
     }
 
     /** Wakes <code>ensureSkeletonRuns</code>. */

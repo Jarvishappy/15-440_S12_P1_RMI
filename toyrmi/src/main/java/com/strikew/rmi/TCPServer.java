@@ -1,7 +1,7 @@
 package com.strikew.rmi;
 
 import com.strikew.rmi.config.Config;
-import com.strikew.rmi.server.EventHandler;
+import com.strikew.rmi.server.EventDispatcher;
 import com.strikew.rmi.server.ServerEvent;
 import com.strikew.rmi.server.ServerState;
 import com.strikew.rmi.server.task.CallbackTask;
@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -49,9 +48,6 @@ class TCPServer<T> extends Thread {
     private InetSocketAddress address;  // Server socket address
     private ServerSocket serverSocket;
 
-
-    private EventHandler eventHandler;
-
     public static final Throwable DUMMY_THROWABLE = new Throwable("dumb");
 
     /**
@@ -85,10 +81,10 @@ class TCPServer<T> extends Thread {
         if (null == getAddress()) {
             address = new InetSocketAddress(DEFAULT_PORT);
         }
-        // TODO 使用ThreadPoolExecutor来做线程池
-        workerThreads = Executors.newFixedThreadPool(Config.MIN_THREAD);
+
+        workerThreads = Executors.newFixedThreadPool(Config.MAX_THREAD);
         stateTransition(ServerState.CREATED, ServerState.INITED);
-        eventHandler = new EventHandler(skeleton);
+        EventDispatcher.init(skeleton);
         serverSocket = address != null ?
                 new ServerSocket(address.getPort(), Config.MAX_CONNECTION, address.getAddress()) :
                 new ServerSocket(Config.LISTENING_PORT, Config.MAX_CONNECTION);
@@ -106,7 +102,7 @@ class TCPServer<T> extends Thread {
         try {
             terminated = workerThreads.awaitTermination(500, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            LOGGER.warn("TCPServer be interrupted awaiting ternimate");
         }
 
         if (terminated) {
@@ -115,7 +111,7 @@ class TCPServer<T> extends Thread {
             LOGGER.warn("server terminated fail");
         }
 
-        eventHandler.handleEvent(ServerEvent.STOPPED, DUMMY_THROWABLE);
+        EventDispatcher.fireEvent(ServerEvent.STOPPED, DUMMY_THROWABLE);
 
     }
 
@@ -164,10 +160,8 @@ class TCPServer<T> extends Thread {
                     // clientSocket的状态应该由Worker thread来维护，而不是Listening thread
 
                     Socket clientSocket = serverSocket.accept();
-                    CallbackTask<T> task = new CallbackTask<>(eventHandler, serviceImpl, clientSocket);
-                    workerThreads.submit(task);
-                } catch (SocketException e) {
-                    //LOGGER.log(Level.WARNING, "Socket exception while listening: ", e);
+                    CallbackTask<T> task = new CallbackTask<>(serviceImpl, clientSocket);
+                    workerThreads.execute(task);
                 } catch (IOException e) {
                     LOGGER.warn("IO exception while listening: ", e);
                 }
@@ -178,7 +172,7 @@ class TCPServer<T> extends Thread {
             // 除IO异常之外的，认为发生了LISTEN_ERROR
         } catch (Exception e) {
             LOGGER.error("Server exception while listenning:", e);
-            eventHandler.handleEvent(ServerEvent.LISTEN_ERROR, e);
+            EventDispatcher.fireEvent(ServerEvent.LISTEN_ERROR, e);
         }
     }
 
